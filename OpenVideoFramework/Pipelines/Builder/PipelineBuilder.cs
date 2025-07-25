@@ -1,24 +1,10 @@
 ﻿using System.Threading.Channels;
 
-namespace OpenVideoFramework;
-
-public interface IPipelineSource<TOutput>
-{
-    Task ProduceAsync(ChannelWriter<TOutput> output, CancellationToken cancellationToken);
-}
-
-public interface IPipelineSink<TInput>
-{
-    Task ConsumeAsync(ChannelReader<TInput> input, CancellationToken cancellationToken);
-}
-
-public interface IPipelineUnit<TInput, TOutput>
-{
-    Task ProcessAsync(ChannelReader<TInput> reader, ChannelWriter<TOutput> writer, CancellationToken cancellationToken);
-}
+namespace OpenVideoFramework.Pipelines.Builder;
 
 public interface IPipelineElement
 {
+    Task PrepareForExecutionAsync(CancellationToken cancellationToken);
     Task ExecuteAsync(CancellationToken cancellationToken);
 }
 
@@ -40,7 +26,7 @@ public class PipelineBuilder<TCurrentOutput>
         _channels = [];
         _elements = [];
 
-
+        
         var sourceChannel = Channel.CreateUnbounded<TCurrentOutput>();
         var sourceElement = new SourceElement<TCurrentOutput>(source, sourceChannel.Writer);
         _elements.Add(sourceElement);
@@ -73,23 +59,14 @@ public class PipelineBuilder<TCurrentOutput>
 
         return new Pipeline(_elements);
     }
-}
 
-public class Pipeline
-{
-    private readonly List<IPipelineElement> _elements;
-
-    public Pipeline(List<IPipelineElement> elements)
+    public Pipeline Build()
     {
-        _elements = elements;
-    }
+        var sink = new NullSink<TCurrentOutput>();
+        var lastChannel = (Channel<TCurrentOutput>)_channels[^1];
+        var sinkElement = new SinkElement<TCurrentOutput>(sink, lastChannel.Reader);
+        _elements.Add(sinkElement);
 
-    public (Task, CancellationTokenSource) Run()
-    {
-        var cts = new CancellationTokenSource();
-        var tasks = _elements.ConvertAll(e => e.ExecuteAsync(cts.Token));
-        var combinedTask = Task.WhenAll(tasks);
-
-        return (combinedTask, cts);
+        return new Pipeline(_elements);
     }
 }

@@ -1,9 +1,15 @@
 ﻿using System.Threading.Channels;
+using OpenVideoFramework.Pipelines;
 
 namespace OpenVideoFramework;
 
 public class RandomStringSource : IPipelineSource<string>
 {
+    public Task PrepareForExecutionAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
+
     public async Task ProduceAsync(ChannelWriter<string> output, CancellationToken cancellationToken)
     {
         var counter = 0;
@@ -22,6 +28,11 @@ public class RandomStringSource : IPipelineSource<string>
 
 public class TransformerUnit : IPipelineUnit<string, string>
 {
+    public Task PrepareForExecutionAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
+
     public async Task ProcessAsync(ChannelReader<string> reader, ChannelWriter<string> writer, CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
@@ -34,6 +45,11 @@ public class TransformerUnit : IPipelineUnit<string, string>
 
 public class ConsoleSink : IPipelineSink<string>
 {
+    public Task PrepareForExecutionAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
+
     public async Task ConsumeAsync(ChannelReader<string> input, CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)

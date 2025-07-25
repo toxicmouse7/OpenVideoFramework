@@ -1,6 +1,6 @@
 ﻿using System.Threading.Channels;
 
-namespace OpenVideoFramework;
+namespace OpenVideoFramework.Pipelines.Builder;
 
 internal class SourceElement<TOutput> : IPipelineElement
 {
@@ -11,6 +11,11 @@ internal class SourceElement<TOutput> : IPipelineElement
     {
         _source = source;
         _writer = writer;
+    }
+
+    public async Task PrepareForExecutionAsync(CancellationToken cancellationToken)
+    {
+        await _source.PrepareForExecutionAsync(cancellationToken);
     }
 
     public async Task ExecuteAsync(CancellationToken cancellationToken)

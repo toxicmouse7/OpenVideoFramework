@@ -1,6 +1,6 @@
 ﻿using System.Threading.Channels;
 
-namespace OpenVideoFramework;
+namespace OpenVideoFramework.Pipelines.Builder;
 
 internal class SinkElement<TInput> : IPipelineElement
 {
@@ -11,6 +11,11 @@ internal class SinkElement<TInput> : IPipelineElement
     {
         _sink = sink;
         _reader = reader;
+    }
+
+    public async Task PrepareForExecutionAsync(CancellationToken cancellationToken)
+    {
+        await _sink.PrepareForExecutionAsync(cancellationToken);
     }
 
     public async Task ExecuteAsync(CancellationToken cancellationToken)
