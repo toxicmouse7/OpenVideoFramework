@@ -44,19 +44,19 @@ public partial class RtspClient
         params string[] headers)
     {
         var request = new StringBuilder();
-        request.AppendLine($"{method} {uri} RTSP/1.0");
-        request.AppendLine($"CSeq: {_sequence}");
-        request.AppendLine("User-Agent: C# RTSP Client");
+        request.Append($"{method} {uri} RTSP/1.0\r\n");
+        request.AppendLine($"CSeq: {_sequence}\r\n");
+        request.AppendLine("User-Agent: C# RTSP Client\r\n");
 
         foreach (var header in headers)
         {
-            request.AppendLine(header);
+            request.Append($"{header}\r\n");
         }
 
         if (!string.IsNullOrEmpty(_sessionId))
-            request.AppendLine($"Session: {_sessionId}");
+            request.Append($"Session: {_sessionId}\r\n");
 
-        request.AppendLine();
+        request.Append("\r\n");
 
         var bytes = Encoding.ASCII.GetBytes(request.ToString());
         await stream.WriteAsync(bytes);
@@ -195,7 +195,7 @@ public partial class RtspClient
             return;
         }
 
-        var rtpReceiveTask = Task.Factory.StartNew(async () =>
+        var rtpReceiveTask = await Task.Factory.StartNew(async () =>
         {
             while (!cancellationToken.IsCancellationRequested)
             {
@@ -204,7 +204,7 @@ public partial class RtspClient
             }
         }, TaskCreationOptions.LongRunning);
 
-        var rtcpReceiveTask = Task.Factory.StartNew(async () =>
+        var rtcpReceiveTask = await Task.Factory.StartNew(async () =>
         {
             while (!cancellationToken.IsCancellationRequested)
             {
@@ -212,10 +212,10 @@ public partial class RtspClient
             }
         }, TaskCreationOptions.LongRunning);
 
-        await Task.WhenAny(rtpReceiveTask, rtcpReceiveTask);
+        await Task.WhenAny(rtpReceiveTask);
     }
 
-    public async Task<RtpPacket> ReceiveRtpAsync(CancellationToken cancellationToken)
+    private async Task<RtpPacket> ReceiveRtpAsync(CancellationToken cancellationToken)
     {
         var udpPacket = await _rtpClient.ReceiveAsync(cancellationToken);
 
