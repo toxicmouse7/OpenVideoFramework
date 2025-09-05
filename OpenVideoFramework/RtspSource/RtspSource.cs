@@ -1,15 +1,14 @@
 using System.Threading.Channels;
 using OpenVideoFramework.Pipelines;
-using OpenVideoFramework.RtspSource.Rtp;
 
 namespace OpenVideoFramework.RtspSource;
 
-public class RtspSource : IPipelineSource<RtpPacket>
+public class RtspSource : IPipelineSource<INetworkPacket>
 {
     private readonly RtspSourceConfiguration _configuration;
     private readonly RtspClient _rtspClient;
 
-    private ChannelWriter<RtpPacket> _output = null!;
+    private ChannelWriter<INetworkPacket> _output = null!;
 
     public RtspSource(RtspSourceConfiguration configuration)
     {
@@ -22,16 +21,16 @@ public class RtspSource : IPipelineSource<RtpPacket>
         await _rtspClient.ConnectAsync(cancellationToken);
     }
 
-    public async Task ProduceAsync(ChannelWriter<RtpPacket> output, CancellationToken cancellationToken)
+    public async Task ProduceAsync(ChannelWriter<INetworkPacket> output, CancellationToken cancellationToken)
     {
         _output = output;
 
         await _rtspClient.ReceiveAsync(
-            OnRtpPacketReady,
+            OnPacketReady,
             cancellationToken);
     }
 
-    private async Task OnRtpPacketReady(RtpPacket packet)
+    private async Task OnPacketReady(INetworkPacket packet)
     {
         await _output.WriteAsync(packet);
     }

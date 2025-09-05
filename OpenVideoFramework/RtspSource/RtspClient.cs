@@ -2,8 +2,6 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
-using OpenVideoFramework.RtspSource.Rtp;
-using OpenVideoFramework.RtspSource.Rtp.Mjpeg;
 
 namespace OpenVideoFramework.RtspSource;
 
@@ -45,8 +43,8 @@ public partial class RtspClient
     {
         var request = new StringBuilder();
         request.Append($"{method} {uri} RTSP/1.0\r\n");
-        request.AppendLine($"CSeq: {_sequence}\r\n");
-        request.AppendLine("User-Agent: C# RTSP Client\r\n");
+        request.Append($"CSeq: {_sequence}\r\n");
+        request.Append("User-Agent: C# RTSP Client\r\n");
 
         foreach (var header in headers)
         {
@@ -182,7 +180,7 @@ public partial class RtspClient
     }
 
     public async Task ReceiveAsync(
-        Func<RtpPacket, Task> onRtpPacketReceived,
+        Func<INetworkPacket, Task> onPacketReady,
         CancellationToken cancellationToken)
     {
         var stream = _rtspClient.GetStream();
@@ -199,8 +197,8 @@ public partial class RtspClient
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                var rtpPacket = await ReceiveRtpAsync(cancellationToken);
-                await onRtpPacketReceived(rtpPacket);
+                var packet = await ReceiveRtpAsync(cancellationToken);
+                await onPacketReady(packet);
             }
         }, TaskCreationOptions.LongRunning);
 
@@ -208,29 +206,50 @@ public partial class RtspClient
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                var udpPacket = await _rtcpClient.ReceiveAsync(cancellationToken);
+                var packet = await ReceiveRtcpAsync(cancellationToken);
+                await onPacketReady(packet);
             }
         }, TaskCreationOptions.LongRunning);
 
-        await Task.WhenAny(rtpReceiveTask);
+        await Task.WhenAny(rtpReceiveTask, rtcpReceiveTask);
     }
 
-    private async Task<RtpPacket> ReceiveRtpAsync(CancellationToken cancellationToken)
+    private async Task<INetworkPacket> ReceiveRtcpAsync(CancellationToken cancellationToken)
     {
         var udpPacket = await _rtpClient.ReceiveAsync(cancellationToken);
 
-        var rtpHeader = RtpPacketHeader.Deserialize(udpPacket.Buffer);
-
-        if (rtpHeader.PayloadType == (uint)PayloadType.MJPEG)
+        return new RtpPacket
         {
-            var mjpegHeader = RtpMjpegHeader.Deserialize(udpPacket.Buffer);
-            return new RtpMjpegPacket
-            {
-                Header = rtpHeader,
-                MjpegHeader = mjpegHeader
-            };
-        }
+            Data = udpPacket.Buffer,
+            Protocol = ProtocolType.Rtcp,
+            ReceivedTime = DateTimeOffset.Now,
+        };
+    }
 
-        return new RtpPacket();
+    private async Task<INetworkPacket> ReceiveRtpAsync(CancellationToken cancellationToken)
+    {
+        var udpPacket = await _rtpClient.ReceiveAsync(cancellationToken);
+
+        return new RtpPacket
+        {
+            Data = udpPacket.Buffer,
+            Protocol = ProtocolType.Rtp,
+            ReceivedTime = DateTimeOffset.Now,
+        };
+
+        // var rtpHeader = RtpPacketHeader.Deserialize(udpPacket.Buffer);
+        //
+        // if (rtpHeader.PayloadType == (uint)PayloadType.MJPEG)
+        // {
+        //     var mjpegHeader = RtpMjpegHeader.Deserialize(udpPacket.Buffer.AsSpan(rtpHeader.Size));
+        //     return new RtpMjpegPacket
+        //     {
+        //         Header = rtpHeader,
+        //         MjpegHeader = mjpegHeader,
+        //         Content = udpPacket.Buffer.AsSpan(rtpHeader.Size + RtpMjpegHeader.Size).ToArray()
+        //     };
+        // }
+        //
+        // throw new NotSupportedException($"Unsupported RTP payload type. Payload type: {rtpHeader.PayloadType}");
     }
 }

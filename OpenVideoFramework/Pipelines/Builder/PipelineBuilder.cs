@@ -26,7 +26,7 @@ public class PipelineBuilder<TCurrentOutput>
         _channels = [];
         _elements = [];
 
-        
+
         var sourceChannel = Channel.CreateUnbounded<TCurrentOutput>();
         var sourceElement = new SourceElement<TCurrentOutput>(source, sourceChannel.Writer);
         _elements.Add(sourceElement);
@@ -49,6 +49,27 @@ public class PipelineBuilder<TCurrentOutput>
         _channels.Add(channel);
 
         return new PipelineBuilder<TNextOutput>(_elements, _channels);
+    }
+
+    public PipelineBuilder<TCurrentOutput> Branch(Action<PipelineBuilder<TCurrentOutput>> branchBuilderAction)
+    {
+        var currentChannel = (Channel<TCurrentOutput>)_channels[^1];
+
+        var splitter = new ChannelSplitterElement<TCurrentOutput>(currentChannel.Reader);
+
+        var continuationChannel = Channel.CreateUnbounded<TCurrentOutput>();
+        var branchChannel = Channel.CreateUnbounded<TCurrentOutput>();
+        
+        splitter.AddBranch(continuationChannel.Writer);
+        splitter.AddBranch(branchChannel.Writer);
+
+        _elements.Add(splitter);
+        _channels.Add(continuationChannel);
+
+        var branchBuilder = new PipelineBuilder<TCurrentOutput>(_elements, [branchChannel]);
+        branchBuilderAction(branchBuilder);
+
+        return this;
     }
 
     public Pipeline Flush(IPipelineSink<TCurrentOutput> sink)

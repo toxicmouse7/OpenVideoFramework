@@ -1,7 +1,7 @@
 ﻿using System.Threading.Channels;
 using OpenVideoFramework.Pipelines;
 
-namespace OpenVideoFramework;
+namespace OpenVideoFramework.Demo;
 
 public class RandomStringSource : IPipelineSource<string>
 {
@@ -43,20 +43,22 @@ public class TransformerUnit : IPipelineUnit<string, string>
     }
 }
 
-public class ConsoleSink : IPipelineSink<string>
+public class ConsoleSink<T> : IPipelineSink<T>
 {
+    private readonly Guid _id = Guid.NewGuid();
+
     public Task PrepareForExecutionAsync(CancellationToken cancellationToken)
     {
         return Task.CompletedTask;
     }
 
-    public async Task ConsumeAsync(ChannelReader<string> input, CancellationToken cancellationToken)
+    public async Task ConsumeAsync(ChannelReader<T> input, CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
             var s = await input.ReadAsync(cancellationToken);
             
-            Console.WriteLine(s);
+            Console.WriteLine($"{_id} -- {s}");
         }
     }
 }

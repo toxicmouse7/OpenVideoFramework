@@ -1,19 +1,21 @@
-namespace OpenVideoFramework.RtspSource.Rtp;
+namespace OpenVideoFramework.RtpDepayUnit.Rtp;
 
 public record struct RtpPacketHeader(
     bool Padding,
     bool Extension,
     uint CSRCCount,
     bool Marker,
-    uint PayloadType,
+    byte PayloadType,
     ushort SequenceNumber,
-    int Timestamp,
+    uint Timestamp,
     uint SSRCIdentifier,
     uint[] CSRC,
     ushort HeaderExtensionLength)
 {
     public const int Version = 2;
     public const short ExtensionsHeaderId = 0;
+
+    public int Size => 12;
     
     public static RtpPacketHeader Deserialize(byte[] data)
     {
@@ -24,7 +26,7 @@ public record struct RtpPacketHeader(
             (data[1] & 0x80) != 0,
             (byte)(data[1] & 0x7F),
             BitConverter.ToUInt16(data, 2),
-            BitConverter.ToInt32(data, 4),
+            BitConverter.ToUInt32(data, 4),
             BitConverter.ToUInt32(data, 8),
             [],
             BitConverter.ToUInt16(data, 14)

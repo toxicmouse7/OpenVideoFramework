@@ -2,7 +2,7 @@
 
 namespace OpenVideoFramework.Pipelines.Builder;
 
-internal class SourceElement<TOutput> : IPipelineElement
+internal class SourceElement<TOutput> : IPipelineElement, IDisposable
 {
     private readonly IPipelineSource<TOutput> _source;
     private readonly ChannelWriter<TOutput> _writer;
@@ -27,6 +27,14 @@ internal class SourceElement<TOutput> : IPipelineElement
         finally
         {
             _writer.Complete();
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_source is IDisposable disposable)
+        {
+            disposable.Dispose();
         }
     }
 }

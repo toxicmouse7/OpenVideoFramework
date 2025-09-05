@@ -2,7 +2,7 @@
 
 namespace OpenVideoFramework.Pipelines.Builder;
 
-internal class SinkElement<TInput> : IPipelineElement
+internal class SinkElement<TInput> : IPipelineElement, IDisposable
 {
     private readonly IPipelineSink<TInput> _sink;
     private readonly ChannelReader<TInput> _reader;
@@ -21,5 +21,13 @@ internal class SinkElement<TInput> : IPipelineElement
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         await _sink.ConsumeAsync(_reader, cancellationToken);
+    }
+
+    public void Dispose()
+    {
+        if (_sink is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
     }
 }
