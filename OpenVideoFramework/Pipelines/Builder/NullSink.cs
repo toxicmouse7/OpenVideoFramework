@@ -4,16 +4,13 @@ namespace OpenVideoFramework.Pipelines.Builder;
 
 internal class NullSink<TInput> : IPipelineSink<TInput>
 {
-    public Task PrepareForExecutionAsync(CancellationToken cancellationToken)
+    public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken)
     {
         return Task.CompletedTask;
     }
 
     public async Task ConsumeAsync(ChannelReader<TInput> input, CancellationToken cancellationToken)
     {
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            await input.ReadAsync(cancellationToken);
-        }
+        await foreach (var _ in input.ReadAllAsync(cancellationToken)) ;
     }
 }

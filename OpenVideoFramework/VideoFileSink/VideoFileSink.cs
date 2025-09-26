@@ -1,15 +1,15 @@
 ﻿using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using FFmpeg.AutoGen.Abstractions;
-using OpenVideoFramework.FrameAssemblerUnit;
 using OpenVideoFramework.Pipelines;
-using OpenVideoFramework.RtpDemuxUnit;
+using OpenVideoFramework.RtpFrameAssemblerUnit;
+using OpenVideoFramework.RtspSource.Rtp;
 
 namespace OpenVideoFramework.VideoFileSink;
 
 public class VideoFileSinkSettings
 {
-    public Codec Codec { get; init; }
+    public PayloadType PayloadType { get; init; }
     public int Width { get; init; }
     public int Height { get; init; }
     public double Fps { get; init; }
@@ -28,7 +28,7 @@ public class VideoFileSink : IPipelineSink<CompleteFrame>, IDisposable
         _settings = settings;
     }
 
-    public Task PrepareForExecutionAsync(CancellationToken cancellationToken)
+    public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken)
     {
         RollFile();
         
@@ -98,7 +98,7 @@ public class VideoFileSink : IPipelineSink<CompleteFrame>, IDisposable
 
         _videoStream = ffmpeg.avformat_new_stream(_formatContext, null);
         _videoStream->codecpar->codec_type = AVMediaType.AVMEDIA_TYPE_VIDEO;
-        _videoStream->codecpar->codec_id = MapCodec(_settings.Codec);
+        _videoStream->codecpar->codec_id = MapCodec(_settings.PayloadType);
         _videoStream->codecpar->width = _settings.Width;
         _videoStream->codecpar->height = _settings.Height;
         _videoStream->time_base = ffmpeg.av_inv_q(ffmpeg.av_d2q(_settings.Fps, int.MaxValue));
@@ -110,12 +110,12 @@ public class VideoFileSink : IPipelineSink<CompleteFrame>, IDisposable
         ffmpeg.avformat_write_header(_formatContext, null);
     }
 
-    private static AVCodecID MapCodec(Codec codec)
+    private static AVCodecID MapCodec(PayloadType payloadType)
     {
-        return codec switch
+        return payloadType switch
         {
-            Codec.MJPEG => AVCodecID.AV_CODEC_ID_MJPEG,
-            _ => throw new ArgumentOutOfRangeException(nameof(codec), codec, "Unsupported codec"),
+            PayloadType.MJPEG => AVCodecID.AV_CODEC_ID_MJPEG,
+            _ => throw new ArgumentOutOfRangeException(nameof(payloadType), payloadType, "Unsupported payloadType"),
         };
     }
 

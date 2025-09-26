@@ -13,9 +13,9 @@ internal class SourceElement<TOutput> : IPipelineElement, IDisposable
         _writer = writer;
     }
 
-    public async Task PrepareForExecutionAsync(CancellationToken cancellationToken)
+    public async Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken)
     {
-        await _source.PrepareForExecutionAsync(cancellationToken);
+        await _source.PrepareForExecutionAsync(context, cancellationToken);
     }
 
     public async Task ExecuteAsync(CancellationToken cancellationToken)

@@ -2,17 +2,11 @@
 
 namespace OpenVideoFramework.Pipelines.Builder;
 
-public interface IPipelineElement
-{
-    Task PrepareForExecutionAsync(CancellationToken cancellationToken);
-    Task ExecuteAsync(CancellationToken cancellationToken);
-}
-
 public static class PipelineBuilder
 {
-    public static PipelineBuilder<TOutput> From<TOutput>(IPipelineSource<TOutput> source)
+    public static PipelineBuilder<TOutput> From<TOutput>(PipelineContext context, IPipelineSource<TOutput> source)
     {
-        return new PipelineBuilder<TOutput>(source);
+        return new PipelineBuilder<TOutput>(source, context);
     }
 }
 
@@ -20,9 +14,11 @@ public class PipelineBuilder<TCurrentOutput>
 {
     private readonly List<IPipelineElement> _elements;
     private readonly List<object> _channels;
+    private readonly PipelineContext _context;
 
-    public PipelineBuilder(IPipelineSource<TCurrentOutput> source)
+    public PipelineBuilder(IPipelineSource<TCurrentOutput> source, PipelineContext context)
     {
+        _context = context;
         _channels = [];
         _elements = [];
 
@@ -33,10 +29,11 @@ public class PipelineBuilder<TCurrentOutput>
         _channels.Add(sourceChannel);
     }
 
-    private PipelineBuilder(List<IPipelineElement> elements, List<object> channels)
+    private PipelineBuilder(List<IPipelineElement> elements, List<object> channels, PipelineContext context)
     {
         _elements = elements;
         _channels = channels;
+        _context = context;
     }
 
     public PipelineBuilder<TNextOutput> To<TNextOutput>(IPipelineUnit<TCurrentOutput, TNextOutput> unit)
@@ -48,7 +45,7 @@ public class PipelineBuilder<TCurrentOutput>
         _elements.Add(unitElement);
         _channels.Add(channel);
 
-        return new PipelineBuilder<TNextOutput>(_elements, _channels);
+        return new PipelineBuilder<TNextOutput>(_elements, _channels, _context);
     }
 
     public PipelineBuilder<TCurrentOutput> Branch(Action<PipelineBuilder<TCurrentOutput>> branchBuilderAction)
@@ -66,7 +63,7 @@ public class PipelineBuilder<TCurrentOutput>
         _elements.Add(splitter);
         _channels.Add(continuationChannel);
 
-        var branchBuilder = new PipelineBuilder<TCurrentOutput>(_elements, [branchChannel]);
+        var branchBuilder = new PipelineBuilder<TCurrentOutput>(_elements, [branchChannel], _context);
         branchBuilderAction(branchBuilder);
 
         return this;
@@ -78,7 +75,7 @@ public class PipelineBuilder<TCurrentOutput>
         var sinkElement = new SinkElement<TCurrentOutput>(sink, lastChannel.Reader);
         _elements.Add(sinkElement);
 
-        return new Pipeline(_elements);
+        return new Pipeline(_elements, _context);
     }
 
     public Pipeline Build()
@@ -88,6 +85,6 @@ public class PipelineBuilder<TCurrentOutput>
         var sinkElement = new SinkElement<TCurrentOutput>(sink, lastChannel.Reader);
         _elements.Add(sinkElement);
 
-        return new Pipeline(_elements);
+        return new Pipeline(_elements, _context);
     }
 }

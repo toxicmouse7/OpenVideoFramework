@@ -1,6 +1,9 @@
+﻿using OpenVideoFramework.Common;
+
 namespace OpenVideoFramework.RtspSource;
 
 public class RtspSourceConfiguration
 {
-    public string Url { get; init; } = null!;
+    public required string Url { get; init; } = null!;
+    public MediaType? AllowedMediaType { get; init; } = null!;
 }

@@ -1,4 +1,4 @@
-﻿namespace OpenVideoFramework.RtpDemuxUnit;
+﻿namespace OpenVideoFramework.Common;
 
 public enum MediaType
 {

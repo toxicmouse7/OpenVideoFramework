@@ -5,7 +5,7 @@ namespace OpenVideoFramework.Demo;
 
 public class RandomStringSource : IPipelineSource<string>
 {
-    public Task PrepareForExecutionAsync(CancellationToken cancellationToken)
+    public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken)
     {
         return Task.CompletedTask;
     }
@@ -28,7 +28,7 @@ public class RandomStringSource : IPipelineSource<string>
 
 public class TransformerUnit : IPipelineUnit<string, string>
 {
-    public Task PrepareForExecutionAsync(CancellationToken cancellationToken)
+    public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken)
     {
         return Task.CompletedTask;
     }
@@ -47,7 +47,7 @@ public class ConsoleSink<T> : IPipelineSink<T>
 {
     private readonly Guid _id = Guid.NewGuid();
 
-    public Task PrepareForExecutionAsync(CancellationToken cancellationToken)
+    public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken)
     {
         return Task.CompletedTask;
     }

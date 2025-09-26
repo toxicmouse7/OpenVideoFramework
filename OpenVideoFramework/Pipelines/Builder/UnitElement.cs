@@ -15,9 +15,9 @@ public class UnitElement<TInput, TOutput> : IPipelineElement, IDisposable
         _writer = writer;
     }
 
-    public async Task PrepareForExecutionAsync(CancellationToken cancellationToken)
+    public async Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken)
     {
-        await _unit.PrepareForExecutionAsync(cancellationToken);
+        await _unit.PrepareForExecutionAsync(context, cancellationToken);
     }
 
     public async Task ExecuteAsync(CancellationToken cancellationToken)

@@ -17,7 +17,7 @@ public sealed class ChannelSplitterElement<T> : IPipelineElement
         _branches.Add(branchWriter);
     }
     
-    public Task PrepareForExecutionAsync(CancellationToken cancellationToken)
+    public Task PrepareForExecutionAsync(PipelineContext _, CancellationToken cancellationToken)
     {
         return Task.CompletedTask;
     }

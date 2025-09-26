@@ -5,17 +5,19 @@ namespace OpenVideoFramework.Pipelines;
 public class Pipeline
 {
     private readonly List<IPipelineElement> _elements;
+    private readonly PipelineContext _context;
 
-    internal Pipeline(List<IPipelineElement> elements)
+    internal Pipeline(List<IPipelineElement> elements, PipelineContext context)
     {
         _elements = elements;
+        _context = context;
     }
 
     public async Task<(Task, CancellationTokenSource)> RunAsync()
     {
         var cts = new CancellationTokenSource();
 
-        var preparationTasks = _elements.ConvertAll(e => e.PrepareForExecutionAsync(cts.Token));
+        var preparationTasks = _elements.ConvertAll(e => e.PrepareForExecutionAsync(_context, cts.Token));
         await Task.WhenAll(preparationTasks).ConfigureAwait(false);
 
         var executionTasks = _elements.ConvertAll(async e =>

@@ -1,40 +1,137 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
+using OpenVideoFramework.RtspSource.Rtcp;
+using OpenVideoFramework.RtspSource.Rtp;
+using OpenVideoFramework.RtspSource.SDP;
 
 namespace OpenVideoFramework.RtspSource;
 
 public partial class RtspClient
 {
     private readonly TcpClient _rtspClient;
-    private readonly UdpClient _rtpClient;
-    private readonly UdpClient _rtcpClient;
-
     private readonly Uri _url;
-    private readonly byte[] _rawBuffer;
     private readonly string _username;
     private readonly string _password;
 
-    private Uri? _mediaUri;
     private int _sequence;
     private string? _sessionId;
-    private string _digestNonce;
-    private string _digestRealm;
-
+    private int? _timeout;
+    private string _digestNonce = null!;
+    private string _digestRealm = null!;
+    
     public RtspClient(string url)
     {
         _url = new Uri(url);
         _rtspClient = new TcpClient();
-        _rtcpClient = new UdpClient(0);
-        _rtpClient = new UdpClient(0);
-        _rawBuffer = new byte[4096];
 
         _username = _url.UserInfo.Length == 0 ? string.Empty : _url.UserInfo.Split(':')[0];
         _password = _url.UserInfo.Length == 0 ? string.Empty : _url.UserInfo.Split(':')[1];
         _url = new Uri(url.Replace($"{_url.UserInfo}@", string.Empty));
     }
 
+    public async Task ConnectAsync(CancellationToken token)
+    {
+        await _rtspClient.ConnectAsync(_url.Host, _url.Port, token);
+    }
+
+    public async Task OptionsAsync()
+    {
+        var stream = _rtspClient.GetStream();
+        await SendRequestAsync(stream, "OPTIONS", _url);
+        await ReadResponseAsync(stream);
+    }
+
+    public async Task<IReadOnlyCollection<TrackMetadata>> DescribeAsync()
+    {
+        var stream = _rtspClient.GetStream();
+        await SendRequestAsync(stream, "DESCRIBE", _url, "Accept: application/sdp");
+        var describeResponse = await ReadResponseAsync(stream);
+
+        if (describeResponse.StatusCode == 401)
+        {
+            ParseAuthHeaders(describeResponse.Headers);
+
+            await SendRequestAsync(stream, "DESCRIBE", _url, CreateAuthHeader("DESCRIBE", _url.PathAndQuery));
+            describeResponse = await ReadResponseAsync(stream);
+        }
+
+        var sdp = SdpParser.Parse(describeResponse.Body);
+
+        return sdp;
+    }
+
+    public async Task<TrackReceiver> SetupAsync(TrackMetadata metadata)
+    {
+        var stream = _rtspClient.GetStream();
+
+        var trackUrl = new Uri($"{_url.Scheme}://{_url.Host}:{_url.Port}{metadata.Prefix}");
+        var rtpClient = new RtpClient();
+        var rtcpClient = new RtcpClient();
+
+        await SendRequestAsync(stream, "SETUP", trackUrl,
+            CreateAuthHeader("SETUP", _url.PathAndQuery),
+            CreateTransportHeader(rtpClient, rtcpClient));
+            
+        var setupResponse = await ReadResponseAsync(stream);
+            
+        var serverTransport = setupResponse.Headers["Transport"];
+        var serverPorts = serverTransport
+            .Split(';')
+            .First(x => x.StartsWith("server_port="))
+            .Replace("server_port=", "");
+            
+        if (string.IsNullOrEmpty(_sessionId))
+        {
+            var sessionHeader = setupResponse.Headers.First(x => x.Key == "Session").Value;
+            _sessionId = sessionHeader.Split(';')[0];
+
+            if (_timeout is null && TimeoutRegex().IsMatch(sessionHeader))
+            {
+                _timeout = int.Parse(TimeoutRegex().Match(sessionHeader).Groups[1].Value);
+            }
+        }
+            
+        rtcpClient.Connect(IPEndPoint.Parse($"{_url.Host}:{serverPorts.Split('-').Last()}"));
+
+        return new TrackReceiver
+        {
+            Metadata = metadata,
+            RtcpClient = rtcpClient,
+            RtpClient = rtpClient
+        };
+    }
+
+    public async Task PlayAsync(CancellationToken token)
+    {
+        var stream = _rtspClient.GetStream();
+        
+        await SendRequestAsync(stream, "PLAY", _url, CreateAuthHeader("PLAY", _url.PathAndQuery));
+        await ReadResponseAsync(stream);
+
+        if (_timeout is not null)
+        {
+            await Task.Factory.StartNew(async () =>
+            {
+                var timeout = TimeSpan.FromSeconds(_timeout.Value * 0.66);
+                while (!token.IsCancellationRequested)
+                {
+                    await GetParameterAsync();
+                    await Task.Delay(timeout, token);
+                }
+            }, TaskCreationOptions.LongRunning);
+        }
+    }
+
+    public async Task GetParameterAsync()
+    {
+        var stream = _rtspClient.GetStream();
+        
+        await SendRequestAsync(stream, "GET_PARAMETER", _url, CreateAuthHeader("GET_PARAMETER", _url.PathAndQuery));
+        await ReadResponseAsync(stream);
+    }
+    
     private async Task SendRequestAsync(
         NetworkStream stream,
         string method,
@@ -64,15 +161,73 @@ public partial class RtspClient
 
     private async Task<RtspResponse> ReadResponseAsync(NetworkStream stream)
     {
-        var bytesRead = await stream.ReadAsync(_rawBuffer);
-        var responseStr = Encoding.ASCII.GetString(_rawBuffer, 0, bytesRead);
+        var bytesRead = 0;
+        var buffer = new byte[4096];
+        
+        while (true)
+        {
+            var read = await stream.ReadAsync(buffer.AsMemory(bytesRead, buffer.Length - bytesRead));
+            if (read == 0)
+            {
+                break;
+            }
 
+            bytesRead += read;
+            
+            var responseStr = Encoding.ASCII.GetString(buffer, 0, bytesRead);
+            if (responseStr.Contains("\r\n\r\n"))
+            {
+                if (TryGetContentLength(responseStr, out var contentLength))
+                {
+                    var headersEnd = responseStr.IndexOf("\r\n\r\n", StringComparison.InvariantCulture) + 4;
+                    var bodyReceived = bytesRead - headersEnd;
+
+                    if (bodyReceived >= contentLength)
+                    {
+                        break;
+                    }
+                }
+                else
+                {
+                    break;
+                }
+            }
+            
+            if (bytesRead == buffer.Length)
+            {
+                Array.Resize(ref buffer, buffer.Length * 2);
+            }
+        }
+
+        var finalResponseStr = Encoding.ASCII.GetString(buffer, 0, bytesRead);
+        return ParseResponse(finalResponseStr);
+    }
+    
+    private static bool TryGetContentLength(string response, out int length)
+    {
+        length = 0;
+        const string contentLengthHeader = "Content-Length:";
+        var startIndex = response.IndexOf(contentLengthHeader, StringComparison.OrdinalIgnoreCase);
+
+        if (startIndex == -1) return false;
+
+        startIndex += contentLengthHeader.Length;
+        var endIndex = response.IndexOf("\r\n", startIndex, StringComparison.InvariantCulture);
+        if (endIndex == -1) return false;
+
+        var lengthStr = response.Substring(startIndex, endIndex - startIndex).Trim();
+        return int.TryParse(lengthStr, out length);
+    }
+
+    private RtspResponse ParseResponse(string responseStr)
+    {
         var response = new RtspResponse();
         var lines = responseStr.Split(["\r\n"], StringSplitOptions.None);
-
+        
         var statusLine = lines[0].Split(' ');
-        response.StatusCode = int.Parse(statusLine[1]);
-
+        if (statusLine.Length >= 2)
+            response.StatusCode = int.Parse(statusLine[1]);
+        
         for (var i = 1; i < lines.Length; i++)
         {
             if (string.IsNullOrEmpty(lines[i]))
@@ -120,12 +275,9 @@ public partial class RtspClient
         return $"Authorization: Basic {base64Auth}";
     }
 
-    private string CreateTransportHeader()
+    private static string CreateTransportHeader(RtpClient rtpClient, RtcpClient rtcpClient)
     {
-        var rtpPort = ((IPEndPoint)_rtpClient.Client.LocalEndPoint!).Port;
-        var rtcpPort = ((IPEndPoint)_rtcpClient.Client.LocalEndPoint!).Port;
-
-        return $"Transport: RTP/AVP/UDP;unicast;client_port={rtpPort}-{rtcpPort}";
+        return $"Transport: RTP/AVP/UDP;unicast;client_port={rtpClient.Port}-{rtcpClient.Port}";
     }
 
     private static string ComputeMd5Hash(string input)
@@ -140,116 +292,18 @@ public partial class RtspClient
         return sb.ToString();
     }
 
-    [GeneratedRegex(@"realm=""([^""]*)""")]
+    [GeneratedRegex("""
+                    realm="([^"]*)"
+                    """)]
     private static partial Regex RealmRegex();
 
-    [GeneratedRegex(@"nonce=""([^""]*)""")]
+    [GeneratedRegex("""
+                    nonce="([^"]*)"
+                    """)]
     private static partial Regex NonceRegex();
 
-
-    public async Task ConnectAsync(CancellationToken token)
-    {
-        await _rtspClient.ConnectAsync(_url.Host, _url.Port, token);
-        var stream = _rtspClient.GetStream();
-        await SendRequestAsync(stream, "OPTIONS", _url);
-        var optionsResponse = await ReadResponseAsync(stream);
-
-        await SendRequestAsync(stream, "DESCRIBE", _url, "Accept: application/sdp");
-        var describeResponse = await ReadResponseAsync(stream);
-
-        if (describeResponse.StatusCode == 401)
-        {
-            ParseAuthHeaders(describeResponse.Headers);
-
-            await SendRequestAsync(stream, "DESCRIBE", _url, CreateAuthHeader("DESCRIBE", _url.PathAndQuery));
-            describeResponse = await ReadResponseAsync(stream);
-
-            _mediaUri = new Uri(describeResponse
-                .Body
-                .Split("\r\n")
-                .First(x => x.StartsWith("a=control:rtsp://"))
-                .Replace("a=control:", string.Empty));
-        }
-
-        await SendRequestAsync(stream, "SETUP", _mediaUri ?? _url,
-            CreateAuthHeader("SETUP", _url.PathAndQuery),
-            CreateTransportHeader());
-
-        var setupResponse = await ReadResponseAsync(stream);
-        _sessionId = setupResponse.Headers.First(x => x.Key == "Session").Value.Split(';')[0];
-    }
-
-    public async Task ReceiveAsync(
-        Func<INetworkPacket, Task> onPacketReady,
-        CancellationToken cancellationToken)
-    {
-        var stream = _rtspClient.GetStream();
-
-        await SendRequestAsync(stream, "PLAY", _mediaUri ?? _url, CreateAuthHeader("PLAY", _url.PathAndQuery));
-        var playResponse = await ReadResponseAsync(stream);
-
-        if (playResponse.StatusCode != 200)
-        {
-            return;
-        }
-
-        var rtpReceiveTask = await Task.Factory.StartNew(async () =>
-        {
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                var packet = await ReceiveRtpAsync(cancellationToken);
-                await onPacketReady(packet);
-            }
-        }, TaskCreationOptions.LongRunning);
-
-        var rtcpReceiveTask = await Task.Factory.StartNew(async () =>
-        {
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                var packet = await ReceiveRtcpAsync(cancellationToken);
-                await onPacketReady(packet);
-            }
-        }, TaskCreationOptions.LongRunning);
-
-        await Task.WhenAny(rtpReceiveTask, rtcpReceiveTask);
-    }
-
-    private async Task<INetworkPacket> ReceiveRtcpAsync(CancellationToken cancellationToken)
-    {
-        var udpPacket = await _rtpClient.ReceiveAsync(cancellationToken);
-
-        return new RtpPacket
-        {
-            Data = udpPacket.Buffer,
-            Protocol = ProtocolType.Rtcp,
-            ReceivedTime = DateTimeOffset.Now,
-        };
-    }
-
-    private async Task<INetworkPacket> ReceiveRtpAsync(CancellationToken cancellationToken)
-    {
-        var udpPacket = await _rtpClient.ReceiveAsync(cancellationToken);
-
-        return new RtpPacket
-        {
-            Data = udpPacket.Buffer,
-            Protocol = ProtocolType.Rtp,
-            ReceivedTime = DateTimeOffset.Now,
-        };
-
-        // var rtpHeader = RtpPacketHeader.Deserialize(udpPacket.Buffer);
-        //
-        // if (rtpHeader.PayloadType == (uint)PayloadType.MJPEG)
-        // {
-        //     var mjpegHeader = RtpMjpegHeader.Deserialize(udpPacket.Buffer.AsSpan(rtpHeader.Size));
-        //     return new RtpMjpegPacket
-        //     {
-        //         Header = rtpHeader,
-        //         MjpegHeader = mjpegHeader,
-        //         Content = udpPacket.Buffer.AsSpan(rtpHeader.Size + RtpMjpegHeader.Size).ToArray()
-        //     };
-        // }
-        //
-        // throw new NotSupportedException($"Unsupported RTP payload type. Payload type: {rtpHeader.PayloadType}");
-    }
+    [GeneratedRegex("""
+                    timeout=(\d+)
+                    """)]
+    private static partial Regex TimeoutRegex();
 }

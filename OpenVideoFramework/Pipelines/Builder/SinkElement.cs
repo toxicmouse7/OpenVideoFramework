@@ -13,9 +13,9 @@ internal class SinkElement<TInput> : IPipelineElement, IDisposable
         _reader = reader;
     }
 
-    public async Task PrepareForExecutionAsync(CancellationToken cancellationToken)
+    public async Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken)
     {
-        await _sink.PrepareForExecutionAsync(cancellationToken);
+        await _sink.PrepareForExecutionAsync(context, cancellationToken);
     }
 
     public async Task ExecuteAsync(CancellationToken cancellationToken)

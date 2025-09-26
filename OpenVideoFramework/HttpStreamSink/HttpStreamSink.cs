@@ -5,8 +5,8 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
-using OpenVideoFramework.FrameAssemblerUnit;
 using OpenVideoFramework.Pipelines;
+using OpenVideoFramework.RtpFrameAssemblerUnit;
 
 namespace OpenVideoFramework.HttpStreamSink;
 
@@ -19,8 +19,17 @@ public class HttpStreamSinkSettings
 public class HttpStreamSink : IPipelineSink<CompleteFrame>, IDisposable
 {
     private readonly IWebHost _host;
-    private readonly Channel<CompleteFrame> _frameChannel = Channel.CreateBounded<CompleteFrame>(10);
-    
+
+    private readonly Channel<CompleteFrame> _frameChannel = Channel.CreateBounded<CompleteFrame>(
+        new BoundedChannelOptions(10)
+        {
+            SingleWriter = true,
+            SingleReader = false,
+            FullMode = BoundedChannelFullMode.DropOldest
+        });
+
+    private ILogger<HttpStreamSink> _logger = null!;
+
     public HttpStreamSink(HttpStreamSinkSettings settings)
     {
         _host = WebHost.CreateDefaultBuilder()
@@ -33,6 +42,7 @@ public class HttpStreamSink : IPipelineSink<CompleteFrame>, IDisposable
                 {
                     if (context.Request.Path == settings.Route)
                     {
+                        _logger.LogInformation("Client connected to HTTP stream.");
                         await HandleJpegStream(context);
                     }
                     else
@@ -44,9 +54,12 @@ public class HttpStreamSink : IPipelineSink<CompleteFrame>, IDisposable
             .Build();
     }
 
-    public async Task PrepareForExecutionAsync(CancellationToken cancellationToken)
+    public async Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken)
     {
+        _logger = context.GetLogger<HttpStreamSink>();
         await _host.StartAsync(cancellationToken);
+        
+        _logger.LogInformation("HTTP stream prepared.");
     }
 
     public async Task ConsumeAsync(ChannelReader<CompleteFrame> input, CancellationToken cancellationToken)
@@ -72,10 +85,11 @@ public class HttpStreamSink : IPipelineSink<CompleteFrame>, IDisposable
         }
         catch (OperationCanceledException)
         {
+            _logger.LogInformation("Client disconnected from HTTP stream.");
             // Client disconnected
         }
     }
-    
+
     private static async Task WriteMjpegFrame(
         HttpResponse response,
         byte[] jpegData,
@@ -94,5 +108,7 @@ public class HttpStreamSink : IPipelineSink<CompleteFrame>, IDisposable
     public void Dispose()
     {
         _host.Dispose();
+        _frameChannel.Writer.Complete();
+        GC.SuppressFinalize(this);
     }
 }
