@@ -21,11 +21,11 @@ public class RtspSource : IPipelineSource<RtpPacket>
         _configuration = configuration;
         _rtspClient = new RtspClient(configuration.Url);
     }
-    
+
     public async Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken)
     {
         _logger = context.GetLogger<RtspSource>();
-        
+
         await _rtspClient.ConnectAsync(cancellationToken);
 
         var metadata = await _rtspClient.DescribeAsync();
@@ -38,10 +38,10 @@ public class RtspSource : IPipelineSource<RtpPacket>
                 _logger.LogInformation("Track \"{track}\" skipped based on AllowedMediaType.", trackMetadata.Prefix);
                 continue;
             }
-            
+
             var trackReceiver = await _rtspClient.SetupAsync(trackMetadata);
             _trackReceivers.Add(trackReceiver);
-            
+
             _logger.LogInformation(
                 "Track set up. Track: {track}. Media: {media}.",
                 trackReceiver.Metadata.Prefix, trackReceiver.Metadata.MediaType);
@@ -52,12 +52,12 @@ public class RtspSource : IPipelineSource<RtpPacket>
     {
         await _rtspClient.PlayAsync(cancellationToken);
         _logger.LogInformation("Playing RTSP stream.");
-        
+
         var producingTasks = _trackReceivers.Select(r => ProduceRtpPackets(r, output, cancellationToken));
         var calculatingTasks = _trackReceivers.Select(r => CalculateRtcpStatistics(r, cancellationToken));
-        
+
         var allTasks = producingTasks.Concat(calculatingTasks);
-        
+
         await Task.WhenAll(allTasks);
     }
 
@@ -81,11 +81,11 @@ public class RtspSource : IPipelineSource<RtpPacket>
         CancellationToken token)
     {
         var stopwatch = Stopwatch.StartNew();
-        
+
         while (!token.IsCancellationRequested)
         {
             var rtpPacket = await trackReceiver.RtpClient.GetPacketAsync(token);
-            
+
             _statisticsService.UpdateStatistics(rtpPacket, trackReceiver.Metadata.ClockRate, rtpPacket.ReceivedAt);
 
             if (stopwatch.Elapsed > TimeSpan.FromSeconds(5))
@@ -94,12 +94,12 @@ public class RtspSource : IPipelineSource<RtpPacket>
                 _ = Task.Run(async () =>
                 {
                     var receiverReport = _statisticsService.GetReceiverReport(rtpPacket.Header.SSRC);
-                    
+
                     if (receiverReport is not null)
                     {
                         await trackReceiver.RtcpClient.SendReceiverReportAsync(receiverReport);
                     }
-                    
+
                     stopwatch.Start();
                 }, token);
             }
@@ -113,7 +113,7 @@ public class RtspSource : IPipelineSource<RtpPacket>
             {
                 rtpPacket.Stamp(timestamp.Value);
             }
-            
+
             await output.WriteAsync(rtpPacket, token);
         }
     }

@@ -2,7 +2,7 @@
 
 namespace OpenVideoFramework.Pipelines.Builder;
 
-public sealed class ChannelSplitterElement<T> : IPipelineElement
+internal sealed class ChannelSplitterElement<T> : IPipelineElement
 {
     private readonly ChannelReader<T> _reader;
     private readonly List<ChannelWriter<T>> _branches = [];

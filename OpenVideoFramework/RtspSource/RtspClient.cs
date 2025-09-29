@@ -8,7 +8,7 @@ using OpenVideoFramework.RtspSource.SDP;
 
 namespace OpenVideoFramework.RtspSource;
 
-public partial class RtspClient
+internal partial class RtspClient
 {
     private readonly TcpClient _rtspClient;
     private readonly Uri _url;
@@ -67,7 +67,7 @@ public partial class RtspClient
         var stream = _rtspClient.GetStream();
 
         var trackUrl = new Uri($"{_url.Scheme}://{_url.Host}:{_url.Port}{metadata.Prefix}");
-        var rtpClient = new RtpClient();
+        var rtpClient = new RtpClient(metadata);
         var rtcpClient = new RtcpClient();
 
         await SendRequestAsync(stream, "SETUP", trackUrl,

@@ -2,7 +2,7 @@
 
 namespace OpenVideoFramework.RtspSource.Rtcp;
 
-public static class RtcpSerializer
+internal static class RtcpSerializer
 {
     public static RtcpPacket DeserializeRtcpPacket(byte[] data)
     {

@@ -4,7 +4,7 @@ using OpenVideoFramework.RtspSource.SDP;
 
 namespace OpenVideoFramework.RtspSource;
 
-public class TrackReceiver
+internal class TrackReceiver
 {
     public RtpClient RtpClient { get; set; } = null!;
     public RtcpClient RtcpClient { get; set; } = null!;

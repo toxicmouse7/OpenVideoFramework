@@ -2,7 +2,7 @@
 
 namespace OpenVideoFramework.RtspSource.Rtcp;
 
-public class RtcpStatisticsService
+internal class RtcpStatisticsService
 {
     private readonly Queue<RtcpSenderReport> _srQueue = [];
     private readonly Dictionary<uint, StreamStatistics> _streamStatistics = new();

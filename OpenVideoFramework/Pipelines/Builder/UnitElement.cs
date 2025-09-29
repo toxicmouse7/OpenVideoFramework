@@ -2,7 +2,7 @@
 
 namespace OpenVideoFramework.Pipelines.Builder;
 
-public class UnitElement<TInput, TOutput> : IPipelineElement, IDisposable
+internal class UnitElement<TInput, TOutput> : IPipelineElement, IDisposable
 {
     private readonly IPipelineUnit<TInput, TOutput> _unit;
     private readonly ChannelReader<TInput> _reader;

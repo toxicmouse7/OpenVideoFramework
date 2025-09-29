@@ -3,7 +3,7 @@ using System.Net.Sockets;
 
 namespace OpenVideoFramework.RtspSource.Rtcp;
 
-public sealed class RtcpClient : IDisposable
+internal sealed class RtcpClient : IDisposable
 {
     private readonly UdpClient _rtcpClient;
 

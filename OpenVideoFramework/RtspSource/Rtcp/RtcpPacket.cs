@@ -1,6 +1,6 @@
 ﻿namespace OpenVideoFramework.RtspSource.Rtcp;
 
-public abstract class RtcpPacket
+internal abstract class RtcpPacket
 {
     public byte Version { get; init; }
     public byte Padding { get; init; }

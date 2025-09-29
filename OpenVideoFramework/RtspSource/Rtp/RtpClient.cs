@@ -1,14 +1,17 @@
 ﻿using System.Net;
 using System.Net.Sockets;
+using OpenVideoFramework.RtspSource.SDP;
 
 namespace OpenVideoFramework.RtspSource.Rtp;
 
-public sealed class RtpClient : IDisposable
+internal sealed class RtpClient : IDisposable
 {
     private readonly UdpClient _rtpClient;
+    private readonly TrackMetadata _trackMetadata;
 
-    public RtpClient()
+    public RtpClient(TrackMetadata trackMetadata)
     {
+        _trackMetadata = trackMetadata;
         _rtpClient = new UdpClient(0);
     }
 
@@ -16,7 +19,10 @@ public sealed class RtpClient : IDisposable
     {
         var udpPacket = await _rtpClient.ReceiveAsync(token);
         
-        var rtpPacket = RtpSerializer.DeserializeRtpPacket(udpPacket.Buffer);
+        var rtpPacket = RtpSerializer.DeserializeRtpPacket(
+            udpPacket.Buffer,
+            _trackMetadata.PayloadType,
+            _trackMetadata.ClockRate);
 
         return rtpPacket;
     }

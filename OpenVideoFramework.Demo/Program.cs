@@ -1,10 +1,13 @@
 ﻿using FFmpeg.AutoGen.Bindings.DynamicallyLoaded;
+using OpenVideoFramework.AudioFileSink;
 using OpenVideoFramework.Common;
+using OpenVideoFramework.FrameFilterUnit;
 using OpenVideoFramework.HttpStreamSink;
 using OpenVideoFramework.Pipelines;
 using OpenVideoFramework.Pipelines.Builder;
 using OpenVideoFramework.RtpFrameAssemblerUnit;
 using OpenVideoFramework.RtspSource;
+using OpenVideoFramework.VideoFileSink;
 using Serilog;
 using Serilog.Extensions.Logging;
 
@@ -26,28 +29,12 @@ var pipeline = PipelineBuilder
         AllowedMediaType = MediaType.Video
     }))
     .To(new RtpFrameAssemblerUnit())
-    .Flush(new HttpStreamSink(new HttpStreamSinkSettings
+    .To(new FrameFilterUnit<VideoFrame>())
+    .Flush(new VideoFileSink(new VideoFileSinkSettings
     {
-        Route = "/stream",
-        Port = 8080
+        RollPeriod = TimeSpan.FromSeconds(10),
+        OutputPath = @"C:\Users\Aleksej\Desktop\audio.mp4"
     }));
- 
-    // .Branch(branch =>
-    // {
-    //     branch.Flush(new HttpStreamSink(new HttpStreamSinkSettings
-    //     {
-    //         Route = "/stream"
-    //     }));
-    // })
-    // .Build();
-// .Flush(new VideoFileSink(new VideoFileSinkSettings
-// {
-//     Codec = Codec.MJPEG,
-//     Fps = 15,
-//     Width = 720,
-//     Height = 480,
-//     RollPeriod = TimeSpan.FromSeconds(10),
-// }));
 
 var (task, cts) = await pipeline.RunAsync();
 

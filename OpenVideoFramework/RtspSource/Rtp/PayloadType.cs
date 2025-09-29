@@ -1,7 +1,9 @@
 namespace OpenVideoFramework.RtspSource.Rtp;
 
-public enum PayloadType : uint
+public enum PayloadType
 {
-    MJPEG = 26,
-    H264 = 96
+    Unknown,
+    JPEG,
+    H264,
+    AC3
 }

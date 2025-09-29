@@ -29,7 +29,7 @@ public struct SenderInfo
     public uint SendersOctetCount { get; init; }
 }
 
-public class RtcpSenderReport : RtcpPacket
+internal class RtcpSenderReport : RtcpPacket
 {
     public uint SSRC { get; init; }
     public SenderInfo SenderInfo { get; init; }

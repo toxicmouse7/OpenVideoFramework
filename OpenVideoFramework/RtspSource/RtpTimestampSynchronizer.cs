@@ -3,7 +3,7 @@ using OpenVideoFramework.RtspSource.Rtcp;
 
 namespace OpenVideoFramework.RtspSource;
 
-public class RtpTimestampSynchronizer
+internal class RtpTimestampSynchronizer
 {
     private readonly ConcurrentDictionary<uint, StreamSyncContext> _streamContexts = new();
     

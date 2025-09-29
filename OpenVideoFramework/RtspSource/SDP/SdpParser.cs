@@ -1,8 +1,9 @@
 ﻿using OpenVideoFramework.Common;
+using OpenVideoFramework.RtspSource.Rtp;
 
 namespace OpenVideoFramework.RtspSource.SDP;
 
-public class SdpParser
+internal class SdpParser
 {
     public static List<TrackMetadata> Parse(string sdpContent)
     {
@@ -18,7 +19,6 @@ public class SdpParser
                 currentMetadata = new TrackMetadata();
                 var parts = line.Split(' ');
                 currentMetadata.MediaType = parts[0] == "m=video" ? MediaType.Video : MediaType.Audio;
-                currentMetadata.PayloadType = byte.Parse(parts[3]);
                 metadataList.Add(currentMetadata);
             }
             else if (line.StartsWith("a=rtpmap:"))
@@ -27,7 +27,11 @@ public class SdpParser
                 if (parts.Length > 1 && currentMetadata != null)
                 {
                     var codecParts = parts[1].Split('/');
-                    currentMetadata.Codec = codecParts[0];
+
+                    currentMetadata.PayloadType = Enum.TryParse<PayloadType>(codecParts[0], true, out var payload)
+                        ? payload
+                        : PayloadType.Unknown;
+                    
                     if (codecParts.Length > 1)
                         currentMetadata.ClockRate = uint.Parse(codecParts[1]);
                 }

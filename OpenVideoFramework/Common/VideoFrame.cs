@@ -1,4 +1,4 @@
-﻿namespace OpenVideoFramework.RtpFrameAssemblerUnit;
+﻿namespace OpenVideoFramework.Common;
 
 public class VideoFrame : CompleteFrame
 {

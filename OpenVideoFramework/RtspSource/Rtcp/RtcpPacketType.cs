@@ -1,6 +1,6 @@
 ﻿namespace OpenVideoFramework.RtspSource.Rtcp;
 
-public enum RtcpPacketType : byte
+internal enum RtcpPacketType : byte
 {
     SenderReport = 200,
     ReceiverReport = 201,

@@ -1,5 +1,6 @@
 ﻿using System.Net;
 using Microsoft.Extensions.Logging;
+using OpenVideoFramework.Common;
 using OpenVideoFramework.RtspSource.Rtp;
 
 namespace OpenVideoFramework.RtpFrameAssemblerUnit.Assemblers.Jpeg;
@@ -128,8 +129,7 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
     public override CompleteFrame? AddPacket(RtpPacket packet)
     {
         var header = RtpJpegHeader.Deserialize(packet.Content);
-
-        // Если начался новый кадр (другой timestamp), завершаем предыдущий
+        
         if (_jpegFragments.Count > 0 && packet.Header.Timestamp != _currentTimestamp)
         {
             _logger.LogWarning("New frame started before previous completed. Dropping incomplete frame.");
@@ -138,8 +138,7 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
 
         _currentTimestamp = packet.Header.Timestamp;
         _lastPacket = packet;
-
-        // Проверяем корректность offset
+        
         var expectedOffset = _jpegFragments.Sum(f => f.Data.Length);
         if (header.FragmentOffset != expectedOffset)
         {
@@ -148,8 +147,7 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
             DropFrame();
             return null;
         }
-
-        // Извлекаем данные фрагмента
+        
         var fragment = ExtractFragmentData(packet.Content, header);
         if (fragment == null)
         {
@@ -159,8 +157,7 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
         }
 
         _jpegFragments.Add(fragment);
-
-        // Если это последний пакет в кадре (marker bit установлен)
+        
         if (packet.Header.Marker)
         {
             return CreateFrame(header);
@@ -179,6 +176,9 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
                 Data = jpegData,
                 IsKeyFrame = true,
                 ReceivedAt = _lastPacket.ReceivedAt,
+                Codec = Codec.MJPEG,
+                Duration = TimeSpan.MinValue,
+                ClockRate = _lastPacket.ClockRate,
                 Width = header.Width * 8,
                 Height = header.Height * 8
             };

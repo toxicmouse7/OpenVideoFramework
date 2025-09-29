@@ -1,6 +1,6 @@
 ﻿namespace OpenVideoFramework.Pipelines.Builder;
 
-public interface IPipelineElement
+internal interface IPipelineElement
 {
     Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken);
     Task ExecuteAsync(CancellationToken cancellationToken);

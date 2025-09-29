@@ -1,6 +1,6 @@
 namespace OpenVideoFramework.RtspSource.Rtcp;
 
-public struct ReportBlock
+internal struct ReportBlock
 {
     public uint SSRC { get; init; }
     

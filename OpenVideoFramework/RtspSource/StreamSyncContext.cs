@@ -2,7 +2,7 @@
 
 namespace OpenVideoFramework.RtspSource;
 
-public class StreamSyncContext
+internal class StreamSyncContext
 {
     public uint SSRC { get; }
     public DateTimeOffset LastNtpTime { get; private set; }

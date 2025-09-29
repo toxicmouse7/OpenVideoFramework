@@ -1,8 +1,9 @@
 ﻿namespace OpenVideoFramework.RtspSource;
 
-public class NtpTimestampConverter
+internal class NtpTimestampConverter
 {
-    private static readonly DateTimeOffset NtpEpoch = new DateTimeOffset(1900, 1, 1, 0, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset NtpEpoch = new(1900, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
     public static DateTimeOffset ConvertToDateTime(uint ntpSeconds, uint ntpFraction)
     {
         var dateTime = NtpEpoch.AddSeconds(ntpSeconds);

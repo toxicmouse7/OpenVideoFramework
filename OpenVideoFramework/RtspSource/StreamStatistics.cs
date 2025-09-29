@@ -3,7 +3,7 @@ using OpenVideoFramework.RtspSource.Rtp;
 
 namespace OpenVideoFramework.RtspSource;
 
-public class StreamStatistics
+internal class StreamStatistics
 {
     // Highest sequence number related
     private ushort _maxSequenceNumber;
