@@ -25,15 +25,24 @@ var pipelineContext = new PipelineContext("My pipeline", loggerFactory);
 var pipeline = PipelineBuilder
     .From(pipelineContext, new RtspSource(new RtspSourceConfiguration
     {
-        Url = "rtsp://172.17.91.213:8554/xx",
-        AllowedMediaType = MediaType.Video
+        Url = "rtsp://172.17.91.213:8554/xx"
     }))
     .To(new RtpFrameAssemblerUnit())
+    .Branch(branch =>
+    {
+        branch
+            .To(new FrameFilterUnit<AudioFrame>())
+            .Flush(new AudioFileSink(new AudioFileSinkSettings
+            {
+                OutputPath = "audio.ac3",
+                RollPeriod = TimeSpan.FromSeconds(30)
+            }));
+    })
     .To(new FrameFilterUnit<VideoFrame>())
     .Flush(new VideoFileSink(new VideoFileSinkSettings
     {
         RollPeriod = TimeSpan.FromSeconds(10),
-        OutputPath = @"C:\Users\Aleksej\Desktop\audio.mp4"
+        OutputPath = "video.mp4"
     }));
 
 var (task, cts) = await pipeline.RunAsync();

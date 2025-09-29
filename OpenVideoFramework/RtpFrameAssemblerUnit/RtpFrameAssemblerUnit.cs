@@ -8,6 +8,9 @@ using OpenVideoFramework.RtspSource.Rtp;
 
 namespace OpenVideoFramework.RtpFrameAssemblerUnit;
 
+/// <summary>
+/// Assembles individual RTP packets into <see cref="CompleteFrame"/>.
+/// </summary>
 public class RtpFrameAssemblerUnit : IPipelineUnit<RtpPacket, CompleteFrame>
 {
     private readonly Dictionary<uint, RtpFrameAssembler> _assemblers = new();
@@ -31,7 +34,7 @@ public class RtpFrameAssemblerUnit : IPipelineUnit<RtpPacket, CompleteFrame>
                 assembler = CreateAssembler(packet.Header.PayloadType);
                 _assemblers.Add(packet.Header.SSRC, assembler);
             }
-            
+
             var frame = assembler.AddPacket(packet);
 
             if (frame is not null)

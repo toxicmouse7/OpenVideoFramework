@@ -8,6 +8,9 @@ using OpenVideoFramework.Pipelines;
 
 namespace OpenVideoFramework.VideoFileSink;
 
+/// <summary>
+/// Writes <see cref="VideoFrame"/> to containers (e.g. mp4) with automatic file rotation.
+/// </summary>
 public class VideoFileSink : IPipelineSink<VideoFrame>, IDisposable
 {
     private readonly VideoFileSinkSettings _settings;

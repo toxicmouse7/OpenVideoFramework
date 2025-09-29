@@ -2,7 +2,7 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenVideoFramework", "OpenVideoFramework\OpenVideoFramework.csproj", "{C110A20D-9129-4FDC-B489-9A77D8A46C45}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenVideoFramework.Demo", "OpenVideoFramework.Demo\OpenVideoFramework.Demo.csproj", "{D3ED1989-CAA0-4940-BC3B-5F8F7B1CD9F3}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenVideoFramework.Example", "OpenVideoFramework.Example\OpenVideoFramework.Example.csproj", "{D3ED1989-CAA0-4940-BC3B-5F8F7B1CD9F3}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

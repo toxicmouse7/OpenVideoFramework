@@ -7,6 +7,10 @@ using OpenVideoFramework.RtspSource.Rtp;
 
 namespace OpenVideoFramework.RtspSource;
 
+/// <summary>
+/// Connects to an RTSP video stream and outputs RTP packets for pipeline processing.
+/// Supports multiple tracks and maintains stream synchronization and statistics.
+/// </summary>
 public class RtspSource : IPipelineSource<RtpPacket>
 {
     private readonly RtspClient _rtspClient;

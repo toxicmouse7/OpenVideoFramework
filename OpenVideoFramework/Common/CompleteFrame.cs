@@ -1,5 +1,10 @@
 ﻿namespace OpenVideoFramework.Common;
 
+/// <summary>
+/// Base frame type.
+/// <seealso cref="AudioFrame"/>
+/// <seealso cref="VideoFrame"/>
+/// </summary>
 public abstract class CompleteFrame
 {
     public required byte[] Data { get; init; }

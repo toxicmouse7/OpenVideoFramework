@@ -4,6 +4,10 @@ using OpenVideoFramework.Pipelines;
 
 namespace OpenVideoFramework.FrameFilterUnit;
 
+/// <summary>
+/// Filters <see cref="CompleteFrame"/> based on generic type.
+/// </summary>
+/// <typeparam name="TFrameType">>Type to filter on. Must be a derived type from <see cref="CompleteFrame"/></typeparam>
 public class FrameFilterUnit<TFrameType> : IPipelineUnit<CompleteFrame, TFrameType>
     where TFrameType : CompleteFrame
 {

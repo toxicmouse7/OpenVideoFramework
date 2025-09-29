@@ -10,7 +10,7 @@ public class VideoFileSinkSettings
     /// <summary>
     /// Time interval after which a new video file is created.
     /// </summary>
-    public TimeSpan RollPeriod { get; init; }
+    public required TimeSpan RollPeriod { get; init; }
     
     /// <summary>
     /// Output directory and filename pattern for rolling video files.

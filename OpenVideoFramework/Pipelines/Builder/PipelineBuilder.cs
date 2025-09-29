@@ -2,6 +2,10 @@
 
 namespace OpenVideoFramework.Pipelines.Builder;
 
+/// <summary>
+/// Provides methods to create pipeline sources, connect processing units, create branches, and define sinks.
+/// Supports type-safe pipeline construction with channel-based communication between components.
+/// </summary>
 public static class PipelineBuilder
 {
     public static PipelineBuilder<TOutput> From<TOutput>(PipelineContext context, IPipelineSource<TOutput> source)
@@ -10,6 +14,9 @@ public static class PipelineBuilder
     }
 }
 
+/// <summary>
+/// <inheritdoc cref="PipelineBuilder"/>
+/// </summary>
 public class PipelineBuilder<TCurrentOutput>
 {
     private readonly List<IPipelineElement> _elements;

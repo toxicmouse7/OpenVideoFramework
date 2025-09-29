@@ -6,6 +6,11 @@ using OpenVideoFramework.Pipelines;
 
 namespace OpenVideoFramework.AudioFileSink;
 
+/// <summary>
+/// /// <summary>
+/// Writes <see cref="AudioFrame"/> to containers (e.g. ac3) with automatic file rotation.
+/// </summary>
+/// </summary>
 public class AudioFileSink : IPipelineSink<AudioFrame>, IDisposable
 {
     private readonly AudioFileSinkSettings _settings;

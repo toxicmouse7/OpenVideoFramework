@@ -10,17 +10,15 @@ using OpenVideoFramework.Pipelines;
 
 namespace OpenVideoFramework.HttpStreamSink;
 
-public class HttpStreamSinkSettings
-{
-    public int Port { get; init; } = 8080;
-    public required string Route { get; init; } = null!;
-}
-
-public class HttpStreamSink : IPipelineSink<CompleteFrame>, IDisposable
+/// <summary>
+/// Streams video frames as MJPEG over HTTP for real-time web viewing.
+/// Creates a web server that serves a live video stream accessible via web browsers.
+/// </summary>
+public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable
 {
     private readonly IWebHost _host;
 
-    private readonly Channel<CompleteFrame> _frameChannel = Channel.CreateBounded<CompleteFrame>(
+    private readonly Channel<VideoFrame> _frameChannel = Channel.CreateBounded<VideoFrame>(
         new BoundedChannelOptions(10)
         {
             SingleWriter = true,
@@ -62,10 +60,15 @@ public class HttpStreamSink : IPipelineSink<CompleteFrame>, IDisposable
         _logger.LogInformation("HTTP stream prepared.");
     }
 
-    public async Task ConsumeAsync(ChannelReader<CompleteFrame> input, CancellationToken cancellationToken)
+    public async Task ConsumeAsync(ChannelReader<VideoFrame> input, CancellationToken cancellationToken)
     {
         await foreach (var frame in input.ReadAllAsync(cancellationToken))
         {
+            if (frame.Codec != Codec.MJPEG)
+            {
+                throw new ArgumentException($"Only JPEG streams are supported. Received codec: {frame.Codec}");
+            }
+
             await _frameChannel.Writer.WriteAsync(frame, cancellationToken);
         }
     }

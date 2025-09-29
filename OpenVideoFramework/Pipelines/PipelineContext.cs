@@ -2,6 +2,10 @@
 
 namespace OpenVideoFramework.Pipelines;
 
+
+///<summary>
+/// Provides execution context for pipeline components including logging and pipeline identification.
+/// </summary>
 public class PipelineContext
 {
     private readonly ILoggerFactory _loggerFactory;
@@ -13,6 +17,9 @@ public class PipelineContext
         _loggerFactory = loggerFactory;
     }
 
+    /// <summary>
+    /// Creates <see cref="ILogger"/> for type T with pipeline identification.
+    /// </summary>
     public ILogger<T> GetLogger<T>()
     {
         var logger = _loggerFactory.CreateLogger($"{typeof(T).FullName} - {_pipelineName}");
