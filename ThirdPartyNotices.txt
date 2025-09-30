@@ -10,7 +10,7 @@ This project uses the following third-party software:
    The source code for FFmpeg can be obtained from:
    https://ffmpeg.org/download.html
 
-   For full license text, see attached file COPYING.LGPLv2.1
+   For full license text, see attached file LICENSE
    
 2. FFmpeg.AutoGen (https://github.com/Ruslan-B/FFmpeg.AutoGen)
     - License: GNU Lesser General Public License (LGPL) version 3.

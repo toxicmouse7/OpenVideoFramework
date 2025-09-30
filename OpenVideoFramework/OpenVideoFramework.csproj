@@ -24,7 +24,6 @@
 
     <ItemGroup>
         <None Include="../COPYING.LGPLv3" Pack="true" PackagePath=""/>
-        <None Include="../COPYING.LGPLv2.1" Pack="true" PackagePath=""/>
         <None Include="../ThirdPartyNotices.txt" Pack="true" PackagePath=""/>
         <None Include="../LICENSE" Pack="true" PackagePath=""/>
     </ItemGroup>
