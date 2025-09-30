@@ -11,7 +11,7 @@ using OpenVideoFramework.VideoFileSink;
 using Serilog;
 using Serilog.Extensions.Logging;
 
-DynamicallyLoadedBindings.LibrariesPath = @"D:\FFmpeg\bin\";
+DynamicallyLoadedBindings.LibrariesPath = Environment.ExpandEnvironmentVariables("%FFMPEG_LIB_PATH%");
 DynamicallyLoadedBindings.Initialize();
 
 var logger = new LoggerConfiguration()
@@ -25,7 +25,8 @@ var pipelineContext = new PipelineContext("My pipeline", loggerFactory);
 var pipeline = PipelineBuilder
     .From(pipelineContext, new RtspSource(new RtspSourceConfiguration
     {
-        Url = "rtsp://172.17.91.213:8554/xx"
+        Url = "rtsp://172.17.91.213:8554/xx",
+        AllowedMediaType = MediaType.Video
     }))
     .To(new RtpFrameAssemblerUnit())
     .Branch(branch =>
@@ -39,6 +40,13 @@ var pipeline = PipelineBuilder
             }));
     })
     .To(new FrameFilterUnit<VideoFrame>())
+    .Branch(branch =>
+    {
+        branch.Flush(new HttpStreamSink(new HttpStreamSinkSettings
+        {
+            Route = "/stream"
+        }));
+    })
     .Flush(new VideoFileSink(new VideoFileSinkSettings
     {
         RollPeriod = TimeSpan.FromSeconds(10),

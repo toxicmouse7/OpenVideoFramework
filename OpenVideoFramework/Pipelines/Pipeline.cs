@@ -26,7 +26,7 @@ public class Pipeline
             {
                 await e.ExecuteAsync(cts.Token);
             }
-            catch (Exception exception)
+            catch (Exception)
             {
                 await cts.CancelAsync();
                 

@@ -1,0 +1,26 @@
+﻿THIRD-PARTY SOFTWARE NOTICES
+
+This project uses the following third-party software:
+
+1. FFmpeg (https://ffmpeg.org/)
+   - Used libraries: libavcodec, libavformat.
+   - License: GNU Lesser General Public License v2.1 or later (LGPLv2.1+)
+   - Copyright (c) the FFmpeg developers
+   
+   The source code for FFmpeg can be obtained from:
+   https://ffmpeg.org/download.html
+
+   For full license text, see attached file COPYING.LGPLv2.1
+   
+2. FFmpeg.AutoGen (https://github.com/Ruslan-B/FFmpeg.AutoGen)
+    - License: GNU Lesser General Public License (LGPL) version 3.
+    - Copyright (c) Ruslan Balanukhin 2023
+    
+    The source code for FFmpeg.AutoGen can be obtained from:
+    https://github.com/Ruslan-B/FFmpeg.AutoGen
+    
+    For full license text, see attached file COPYING.LGPLv3
+    
+This software is statically linked with FFmpeg.AutoGen library.
+You have the right to replace FFmpeg.AutoGen with a modified version
+and rebuild this software.

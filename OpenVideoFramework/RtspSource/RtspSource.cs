@@ -18,7 +18,7 @@ public class RtspSource : IPipelineSource<RtpPacket>
     private readonly RtpTimestampSynchronizer _timestampSynchronizer = new();
     private readonly List<TrackReceiver> _trackReceivers = [];
     private readonly RtspSourceConfiguration _configuration;
-    private ILogger<RtspSource> _logger;
+    private ILogger<RtspSource> _logger = null!;
 
     public RtspSource(RtspSourceConfiguration configuration)
     {
