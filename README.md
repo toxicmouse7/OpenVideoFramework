@@ -50,7 +50,7 @@ You could find a bit more complex example inside `OpenVideoFramework.Example`
 ## Planned features
 
 - Media transcoding
-- H264 codec support
+- H264 codec support (RTP)
 - Tracks merging
 - Media concatination
 - RtspSource TCP transport support
