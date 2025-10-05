@@ -9,7 +9,7 @@ internal sealed class RtcpClient : IDisposable
 
     public RtcpClient()
     {
-        _rtcpClient = new UdpClient(0);
+        _rtcpClient = new UdpClient(new IPEndPoint(IPAddress.Any, 0));
     }
 
     public int Port => ((IPEndPoint)_rtcpClient.Client.LocalEndPoint!).Port;

@@ -93,6 +93,7 @@ internal partial class RtspClient
             }
         }
             
+        rtpClient.Connect(IPEndPoint.Parse($"{_url.Host}:{serverPorts.Split('-').First()}"));
         rtcpClient.Connect(IPEndPoint.Parse($"{_url.Host}:{serverPorts.Split('-').Last()}"));
 
         return new TrackReceiver

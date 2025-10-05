@@ -12,7 +12,12 @@ internal sealed class RtpClient : IDisposable
     public RtpClient(TrackMetadata trackMetadata)
     {
         _trackMetadata = trackMetadata;
-        _rtpClient = new UdpClient(0);
+        _rtpClient = new UdpClient(new IPEndPoint(IPAddress.Any, 0));
+    }
+    
+    public void Connect(IPEndPoint endPoint)
+    { 
+        _rtpClient.Connect(endPoint);
     }
 
     public async Task<RtpPacket> GetPacketAsync(CancellationToken token = default)
