@@ -41,12 +41,12 @@ public class VideoFileSink : IPipelineSink<VideoFrame>, IDisposable
 
         await foreach (var frame in input.ReadAllAsync(cancellationToken))
         {
-            WriteVideoFrame(frame);
-
-            if (Duration >= _settings.RollPeriod)
+            if (Duration >= _settings.RollPeriod && frame.IsKeyFrame)
             {
                 RollFile(frame);
             }
+
+            WriteVideoFrame(frame);
         }
     }
 
@@ -55,7 +55,6 @@ public class VideoFileSink : IPipelineSink<VideoFrame>, IDisposable
         if (_settings.ConstantFps is null)
         {
             _frameRate = await EstimateFrameRateAsync(input, cancellationToken);
-            _logger.LogInformation("Estimated frame rate: {frameRate}.", _frameRate);
         }
         else
         {
@@ -87,12 +86,16 @@ public class VideoFileSink : IPipelineSink<VideoFrame>, IDisposable
         _frameCount++;
     }
 
-    private static async Task<double> EstimateFrameRateAsync(
+    private async Task<double> EstimateFrameRateAsync(
         ChannelReader<VideoFrame> input,
         CancellationToken cancellationToken)
     {
-        var sw = Stopwatch.StartNew();
+        _logger.LogInformation("Waiting for video frames to estimate framerate.");
+        await input.WaitToReadAsync(cancellationToken);
+        _logger.LogInformation("Estimation started.");
+
         var framesCount = 0;
+        var sw = Stopwatch.StartNew();
         
         await foreach (var _ in input.ReadAllAsync(cancellationToken))
         {
@@ -103,7 +106,11 @@ public class VideoFileSink : IPipelineSink<VideoFrame>, IDisposable
             break;
         }
         
-        return framesCount / sw.Elapsed.TotalSeconds;
+        var frameRate = framesCount / sw.Elapsed.TotalSeconds;
+
+        _logger.LogInformation("Estimated frame rate: {frameRate}.", frameRate);
+        
+        return frameRate;
     }
 
     private unsafe void RollFile(VideoFrame frame)
@@ -120,9 +127,14 @@ public class VideoFileSink : IPipelineSink<VideoFrame>, IDisposable
 
         if (File.Exists(filename))
         {
-            var files = Directory.EnumerateFiles(
-                Path.GetDirectoryName(filename)!,
-                $"{Path.GetFileNameWithoutExtension(filename)}*");
+            var directory = Path.GetDirectoryName(filename);
+            if (string.IsNullOrWhiteSpace(directory))
+            {
+                directory = ".";
+            }
+
+            var pattern =  $"{Path.GetFileNameWithoutExtension(filename)}*";
+            var files = Directory.EnumerateFiles(directory, pattern);
             filename = Path.ChangeExtension($"{Path.ChangeExtension(filename, null)} ({files.Count()})", extension);
         }
 
@@ -149,6 +161,7 @@ public class VideoFileSink : IPipelineSink<VideoFrame>, IDisposable
         return codec switch
         {
             Codec.MJPEG => AVCodecID.AV_CODEC_ID_MJPEG,
+            Codec.H264 => AVCodecID.AV_CODEC_ID_H264,
             _ => throw new ArgumentOutOfRangeException(nameof(codec), codec, "Unsupported codec."),
         };
     }
