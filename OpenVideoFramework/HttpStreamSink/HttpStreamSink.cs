@@ -70,14 +70,15 @@ public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable
             }
 
             await _frameChannel.Writer.WriteAsync(frame, cancellationToken);
+            await Task.Delay(frame.Duration, cancellationToken);
         }
     }
 
     private async Task HandleJpegStream(HttpContext context)
     {
         context.Response.ContentType = "multipart/x-mixed-replace; boundary=frame";
-        context.Response.Headers.Add("Cache-Control", "no-cache");
-        context.Response.Headers.Add("Connection", "keep-alive");
+        context.Response.Headers.Append("Cache-Control", "no-cache");
+        context.Response.Headers.Append("Connection", "keep-alive");
 
         try
         {
