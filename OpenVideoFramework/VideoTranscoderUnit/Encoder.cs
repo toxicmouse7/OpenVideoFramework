@@ -52,7 +52,10 @@ internal class Encoder
 
         while (ffmpeg.avcodec_receive_packet(_codecContext, packet) >= 0)
         {
-            frames = frames.Append(AVPacketToVideoFrame(packet, frame));
+            frames = frames.Append(Utils.AVPacketToVideoFrame(
+                packet, frame.ClockRate, _codec,
+                frame.AVFrame->width, frame.AVFrame->height,
+                frame.ReceivedAt));
 
             ffmpeg.av_frame_unref(avFrame);
         }
@@ -60,24 +63,6 @@ internal class Encoder
         ffmpeg.av_packet_free(&packet);
 
         return frames.ToArray();
-    }
-
-    private unsafe VideoFrame AVPacketToVideoFrame(AVPacket* avPacket, RawFrame frame)
-    {
-        var buffer = new byte[avPacket->size];
-        Marshal.Copy((IntPtr)avPacket->data, buffer, 0, buffer.Length);
-
-        return new VideoFrame
-        {
-            Data = buffer,
-            ClockRate = frame.ClockRate,
-            Codec = _codec,
-            Duration = TimeSpan.Zero,
-            IsKeyFrame = (avPacket->flags & ffmpeg.AV_PKT_FLAG_KEY) != 0,
-            ReceivedAt = frame.ReceivedAt,
-            Height = frame.AVFrame->height,
-            Width = frame.AVFrame->width
-        };
     }
 
     private static AVCodecID MapCodec(Codec codec)
