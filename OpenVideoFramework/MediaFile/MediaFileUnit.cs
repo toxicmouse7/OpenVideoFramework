@@ -6,6 +6,9 @@ using OpenVideoFramework.Pipelines;
 
 namespace OpenVideoFramework.MediaFile;
 
+/// <summary>
+/// Consumes paths to media files. Loads them and produces <see cref="CompleteFrame"/>.
+/// </summary>
 public class MediaFileUnit : IPipelineUnit<string, CompleteFrame>
 {
     private ILogger<MediaFileUnit> _logger = null!;
