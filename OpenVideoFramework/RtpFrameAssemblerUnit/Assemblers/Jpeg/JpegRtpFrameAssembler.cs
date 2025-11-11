@@ -11,13 +11,10 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
     private readonly List<RtpJpegFragment> _jpegFragments = [];
     private uint _currentTimestamp;
     private RtpPacket _lastPacket = null!;
-
-    // Стандартные таблицы квантизации для разных уровней качества
+    
     private static readonly byte[][] DefaultLuminanceQuantTables =
-    {
-        // Q=0 (максимальное сжатие)
-        new byte[]
-        {
+    [
+        [
             16, 11, 10, 16, 24, 40, 51, 61,
             12, 12, 14, 19, 26, 58, 60, 55,
             14, 13, 16, 24, 40, 57, 69, 56,
@@ -26,10 +23,8 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
             24, 35, 55, 64, 81, 104, 113, 92,
             49, 64, 78, 87, 103, 121, 120, 101,
             72, 92, 95, 98, 112, 100, 103, 99
-        },
-        // Q=1 (высокое качество)
-        new byte[]
-        {
+        ],
+        [
             8, 6, 5, 8, 12, 20, 26, 31,
             6, 6, 7, 10, 13, 29, 30, 28,
             7, 7, 8, 12, 20, 29, 35, 28,
@@ -38,14 +33,12 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
             12, 18, 28, 32, 41, 52, 57, 46,
             25, 32, 39, 44, 52, 61, 60, 51,
             36, 46, 48, 49, 56, 50, 52, 50
-        }
-    };
+        ]
+    ];
 
     private static readonly byte[][] DefaultChrominanceQuantTables =
-    {
-        // Q=0 (максимальное сжатие)
-        new byte[]
-        {
+    [
+        [
             17, 18, 24, 47, 99, 99, 99, 99,
             18, 21, 26, 66, 99, 99, 99, 99,
             24, 26, 56, 99, 99, 99, 99, 99,
@@ -54,10 +47,8 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
             99, 99, 99, 99, 99, 99, 99, 99,
             99, 99, 99, 99, 99, 99, 99, 99,
             99, 99, 99, 99, 99, 99, 99, 99
-        },
-        // Q=1 (высокое качество)
-        new byte[]
-        {
+        ],
+        [
             9, 9, 12, 24, 50, 50, 50, 50,
             9, 11, 13, 33, 50, 50, 50, 50,
             12, 13, 28, 50, 50, 50, 50, 50,
@@ -66,18 +57,17 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
             50, 50, 50, 50, 50, 50, 50, 50,
             50, 50, 50, 50, 50, 50, 50, 50,
             50, 50, 50, 50, 50, 50, 50, 50
-        }
-    };
-
-    // Стандартные Huffman таблицы
+        ]
+    ];
+    
     private static readonly byte[] HuffmanDcLuminance =
-    {
+    [
         0x00, 0x01, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b
-    };
+    ];
 
     private static readonly byte[] HuffmanAcLuminance =
-    {
+    [
         0x00, 0x02, 0x01, 0x03, 0x03, 0x02, 0x04, 0x03, 0x05, 0x05, 0x04, 0x04, 0x00, 0x00, 0x01, 0x7d,
         0x01, 0x02, 0x03, 0x00, 0x04, 0x11, 0x05, 0x12, 0x21, 0x31, 0x41, 0x06, 0x13, 0x51, 0x61, 0x07,
         0x22, 0x71, 0x14, 0x32, 0x81, 0x91, 0xa1, 0x08, 0x23, 0x42, 0xb1, 0xc1, 0x15, 0x52, 0xd1, 0xf0,
@@ -90,16 +80,16 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
         0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7, 0xd8, 0xd9, 0xda, 0xe1, 0xe2,
         0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9, 0xea, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8,
         0xf9, 0xfa
-    };
+    ];
 
     private static readonly byte[] HuffmanDcChrominance =
-    {
+    [
         0x00, 0x03, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b
-    };
+    ];
 
     private static readonly byte[] HuffmanAcChrominance =
-    {
+    [
         0x00, 0x02, 0x01, 0x02, 0x04, 0x04, 0x03, 0x04, 0x07, 0x05, 0x04, 0x04, 0x00, 0x01, 0x02, 0x77,
         0x00, 0x01, 0x02, 0x03, 0x11, 0x04, 0x05, 0x21, 0x31, 0x06, 0x12, 0x41, 0x51, 0x07, 0x61, 0x71,
         0x13, 0x22, 0x32, 0x81, 0x08, 0x14, 0x42, 0x91, 0xa1, 0xb1, 0xc1, 0x09, 0x23, 0x33, 0x52, 0xf0,
@@ -112,11 +102,10 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
         0xc4, 0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7, 0xd8, 0xd9, 0xda,
         0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9, 0xea, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8,
         0xf9, 0xfa
-    };
+    ];
 
     private class RtpJpegFragment
     {
-        public uint FragmentOffset { get; set; }
         public byte[] Data { get; set; } = [];
         public byte[]? QuantizationTables { get; set; }
     }
@@ -211,7 +200,6 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
 
         return new RtpJpegFragment
         {
-            FragmentOffset = (uint)header.FragmentOffset,
             Data = packetContent[dataOffset..],
             QuantizationTables = quantTables
         };
