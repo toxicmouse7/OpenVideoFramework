@@ -13,6 +13,14 @@ public class Pipeline
         _context = context;
     }
 
+    public TElement? GetElement<TElement>()
+    {
+        var element = _elements.Select(e => e.GetUnderlyingElement())
+            .FirstOrDefault(e => e is TElement);
+
+        return (TElement?)element;
+    }
+
     public async Task<(Task, CancellationTokenSource)> RunAsync()
     {
         var cts = new CancellationTokenSource();

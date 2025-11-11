@@ -23,6 +23,8 @@ internal class SinkElement<TInput> : IPipelineElement, IDisposable
         await _sink.ConsumeAsync(_reader, cancellationToken);
     }
 
+    public object GetUnderlyingElement() => _sink;
+
     public void Dispose()
     {
         if (_sink is IDisposable disposable)

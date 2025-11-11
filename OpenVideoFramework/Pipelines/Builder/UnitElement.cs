@@ -32,6 +32,8 @@ internal class UnitElement<TInput, TOutput> : IPipelineElement, IDisposable
         }
     }
 
+    public object GetUnderlyingElement() => _unit;
+
     public void Dispose()
     {
         if (_unit is IDisposable disposable)

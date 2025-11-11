@@ -37,4 +37,6 @@ internal sealed class ChannelSplitterElement<T> : IPipelineElement
             writer.Complete();
         }
     }
+
+    public object GetUnderlyingElement() => null!;
 }

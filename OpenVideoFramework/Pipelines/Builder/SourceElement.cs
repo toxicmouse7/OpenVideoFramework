@@ -30,6 +30,8 @@ internal class SourceElement<TOutput> : IPipelineElement, IDisposable
         }
     }
 
+    public object GetUnderlyingElement() => _source;
+
     public void Dispose()
     {
         if (_source is IDisposable disposable)
