@@ -32,13 +32,14 @@ public class VideoTranscoderUnit : IPipelineUnit<VideoFrame, VideoFrame>
     {
         await RuntimeInitializeAsync(reader, writer, cancellationToken);
         
-        _logger.LogInformation(
-            "Initialized encoder and decoder. Encoder: {encoderName}. Decoder: {decoderName}.",
-            _encoder.Name,
-            _decoder.Name);
-        
         await foreach (var frame in reader.ReadAllAsync(cancellationToken))
         {
+            if (frame.Codec == _settings.OutputCodec)
+            {
+                await writer.WriteAsync(frame, cancellationToken);
+                continue;
+            }
+            
             var transcodedFrames = TranscodeFrame(frame);
             foreach (var transcodedFrame in transcodedFrames)
             {
@@ -53,6 +54,12 @@ public class VideoTranscoderUnit : IPipelineUnit<VideoFrame, VideoFrame>
         CancellationToken cancellationToken)
     {
         var initFrame = await reader.ReadAsync(cancellationToken);
+        if (initFrame.Codec == _settings.OutputCodec)
+        {
+            _logger.LogInformation("Input and output codecs are equal. Nothing will be transcoded.");
+            return;
+        }
+        
         _decoder = new Decoder(
             initFrame.Codec,
             initFrame.Width,
@@ -87,6 +94,11 @@ public class VideoTranscoderUnit : IPipelineUnit<VideoFrame, VideoFrame>
 
             break;
         }
+
+        _logger.LogInformation(
+            "Initialized encoder and decoder. Encoder: {encoderName}. Decoder: {decoderName}.",
+            _encoder.Name,
+            _decoder.Name);
     }
     
     private void CreateEncoder(VideoFrame initFrame, AVPixelFormat pixelFormat)
