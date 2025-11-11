@@ -5,7 +5,7 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-        <LangVersion>13</LangVersion>
+        <LangVersion>12</LangVersion>
         <Authors>Aleksej Gladkov</Authors>
         <Title>OpenVideoFramework</Title>
         <Description>The framework is designed to simplify the tasks of processing various types of media data.</Description>
