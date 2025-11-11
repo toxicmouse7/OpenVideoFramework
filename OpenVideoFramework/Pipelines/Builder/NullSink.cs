@@ -11,6 +11,17 @@ internal class NullSink<TInput> : IPipelineSink<TInput>
 
     public async Task ConsumeAsync(ChannelReader<TInput> input, CancellationToken cancellationToken)
     {
-        await foreach (var _ in input.ReadAllAsync(cancellationToken)) ;
+        await foreach (var data in input.ReadAllAsync(cancellationToken))
+        {
+            switch (data)
+            {
+                case IAsyncDisposable asyncDisposable:
+                    await asyncDisposable.DisposeAsync();
+                    break;
+                case IDisposable disposable:
+                    disposable.Dispose();
+                    break;
+            }
+        }
     }
 }
