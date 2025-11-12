@@ -34,16 +34,24 @@ public class Pipeline
             {
                 await e.ExecuteAsync(cts.Token);
             }
+            catch (TaskCanceledException ex) when (ex.CancellationToken == cts.Token)
+            {
+            }
             catch (Exception)
             {
-                await cts.CancelAsync();
-                
+                if (!cts.IsCancellationRequested)
+                {
+                    await cts.CancelAsync();
+                }
+
+                throw;
+            }
+            finally
+            {
                 if (e is IDisposable disposable)
                 {
                     disposable.Dispose();
                 }
-
-                throw;
             }
         });
 
