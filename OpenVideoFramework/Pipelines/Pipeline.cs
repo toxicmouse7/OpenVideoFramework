@@ -37,6 +37,9 @@ public class Pipeline
             catch (TaskCanceledException ex) when (ex.CancellationToken == cts.Token)
             {
             }
+            catch (OperationCanceledException ex) when (ex.CancellationToken == cts.Token)
+            {
+            }
             catch (Exception)
             {
                 if (!cts.IsCancellationRequested)
