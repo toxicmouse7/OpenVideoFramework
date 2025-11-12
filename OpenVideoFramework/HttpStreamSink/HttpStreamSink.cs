@@ -17,19 +17,16 @@ namespace OpenVideoFramework.HttpStreamSink;
 public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable
 {
     private readonly IWebHost _host;
-
-    private readonly Channel<VideoFrame> _frameChannel = Channel.CreateBounded<VideoFrame>(
-        new BoundedChannelOptions(10)
-        {
-            SingleWriter = true,
-            SingleReader = false,
-            FullMode = BoundedChannelFullMode.DropOldest
-        });
+    private readonly List<Channel<VideoFrame>> _channels;
+    private readonly SemaphoreSlim _channelsSemaphore;
+    private CancellationToken _cancellationToken = CancellationToken.None;
 
     private ILogger<HttpStreamSink> _logger = null!;
 
     public HttpStreamSink(HttpStreamSinkSettings settings)
     {
+        _channels = [];
+        _channelsSemaphore = new SemaphoreSlim(1, 1);
         _host = WebHost.CreateDefaultBuilder()
             .UseKestrel()
             .UseUrls($"http://*:{settings.Port}")
@@ -55,6 +52,7 @@ public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable
     public async Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken)
     {
         _logger = context.GetLogger<HttpStreamSink>();
+        _cancellationToken = cancellationToken;
         await _host.StartAsync(cancellationToken);
         
         _logger.LogInformation("HTTP stream prepared.");
@@ -68,29 +66,51 @@ public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable
             {
                 throw new ArgumentException($"Only JPEG streams are supported. Received codec: {frame.Codec}");
             }
-
-            await _frameChannel.Writer.WriteAsync(frame, cancellationToken);
+            
+            await _channelsSemaphore.WaitAsync(cancellationToken);
+            foreach (var clientChannel in _channels)
+            {
+                await clientChannel.Writer.WriteAsync(frame, cancellationToken);
+            }
+            _channelsSemaphore.Release();
+            
             await Task.Delay(frame.Duration, cancellationToken);
         }
     }
 
     private async Task HandleJpegStream(HttpContext context)
     {
+        var channel = Channel.CreateUnbounded<VideoFrame>(new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = true
+        });
+        
+        using var linkedCancellationTokenSource = CancellationTokenSource
+            .CreateLinkedTokenSource(_cancellationToken, context.RequestAborted);
+        
+        await _channelsSemaphore.WaitAsync(linkedCancellationTokenSource.Token);
+        _channels.Add(channel);
+        _channelsSemaphore.Release();
+        
         context.Response.ContentType = "multipart/x-mixed-replace; boundary=frame";
         context.Response.Headers.Append("Cache-Control", "no-cache");
         context.Response.Headers.Append("Connection", "keep-alive");
 
         try
         {
-            await foreach (var frame in _frameChannel.Reader.ReadAllAsync(context.RequestAborted))
+            await foreach (var frame in channel.Reader.ReadAllAsync(linkedCancellationTokenSource.Token))
             {
-                await WriteMjpegFrame(context.Response, frame.Data, context.RequestAborted);
+                await WriteMjpegFrame(context.Response, frame.Data, linkedCancellationTokenSource.Token);
             }
         }
         catch (OperationCanceledException)
         {
             _logger.LogInformation("Client disconnected from HTTP stream.");
-            // Client disconnected
+            await _channelsSemaphore.WaitAsync(TimeSpan.FromSeconds(3), CancellationToken.None);
+            _channels.Remove(channel);
+            channel.Writer.Complete();
+            _channelsSemaphore.Release();
         }
     }
 
@@ -112,7 +132,6 @@ public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable
     public void Dispose()
     {
         _host.Dispose();
-        _frameChannel.Writer.Complete();
         GC.SuppressFinalize(this);
     }
 }
