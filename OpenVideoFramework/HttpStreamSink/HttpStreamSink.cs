@@ -76,6 +76,16 @@ public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable
             
             await Task.Delay(frame.Duration, cancellationToken);
         }
+
+        try
+        {
+            await _host.StopAsync(TimeSpan.Zero);
+            _logger.LogInformation("HTTP stream stopped.");
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "An error occurred while stopping the HTTP stream.");
+        }
     }
 
     private async Task HandleJpegStream(HttpContext context)
@@ -107,6 +117,9 @@ public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable
         catch (OperationCanceledException)
         {
             _logger.LogInformation("Client disconnected from HTTP stream.");
+        }
+        finally
+        {
             await _channelsSemaphore.WaitAsync(TimeSpan.FromSeconds(3), CancellationToken.None);
             _channels.Remove(channel);
             channel.Writer.Complete();
