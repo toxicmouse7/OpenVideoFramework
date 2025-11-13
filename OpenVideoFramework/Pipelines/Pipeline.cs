@@ -34,9 +34,6 @@ public class Pipeline
             {
                 await e.ExecuteAsync(cts.Token);
             }
-            catch (TaskCanceledException ex) when (ex.CancellationToken == cts.Token)
-            {
-            }
             catch (OperationCanceledException ex) when (ex.CancellationToken == cts.Token)
             {
             }
