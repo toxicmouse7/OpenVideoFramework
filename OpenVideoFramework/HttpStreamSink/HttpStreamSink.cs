@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Diagnostics;
+using System.Text;
 using System.Threading.Channels;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Builder;
@@ -62,6 +63,7 @@ public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable
     {
         try
         {
+            var stopwatch = Stopwatch.StartNew();
             await foreach (var frame in input.ReadAllAsync(cancellationToken))
             {
                 if (frame.Codec != Codec.MJPEG)
@@ -76,7 +78,12 @@ public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable
                 }
                 _channelsSemaphore.Release();
             
-                await Task.Delay(frame.Duration, cancellationToken);
+                stopwatch.Stop();
+                if (stopwatch.Elapsed < frame.Duration)
+                {
+                    await Task.Delay(frame.Duration - stopwatch.Elapsed, cancellationToken);
+                }
+                stopwatch.Restart();
             }
         }
         catch (OperationCanceledException e) when (e.CancellationToken == cancellationToken)
