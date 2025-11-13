@@ -60,21 +60,27 @@ public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable
 
     public async Task ConsumeAsync(ChannelReader<VideoFrame> input, CancellationToken cancellationToken)
     {
-        await foreach (var frame in input.ReadAllAsync(cancellationToken))
+        try
         {
-            if (frame.Codec != Codec.MJPEG)
+            await foreach (var frame in input.ReadAllAsync(cancellationToken))
             {
-                throw new ArgumentException($"Only JPEG streams are supported. Received codec: {frame.Codec}");
-            }
+                if (frame.Codec != Codec.MJPEG)
+                {
+                    throw new ArgumentException($"Only JPEG streams are supported. Received codec: {frame.Codec}");
+                }
             
-            await _channelsSemaphore.WaitAsync(cancellationToken);
-            foreach (var clientChannel in _channels)
-            {
-                await clientChannel.Writer.WriteAsync(frame, cancellationToken);
-            }
-            _channelsSemaphore.Release();
+                await _channelsSemaphore.WaitAsync(cancellationToken);
+                foreach (var clientChannel in _channels)
+                {
+                    await clientChannel.Writer.WriteAsync(frame, cancellationToken);
+                }
+                _channelsSemaphore.Release();
             
-            await Task.Delay(frame.Duration, cancellationToken);
+                await Task.Delay(frame.Duration, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException e) when (e.CancellationToken == cancellationToken)
+        {
         }
 
         try
