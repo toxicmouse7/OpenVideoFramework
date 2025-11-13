@@ -6,7 +6,7 @@ using OpenVideoFramework.Pipelines;
 
 namespace OpenVideoFramework.VideoTranscoderUnit;
 
-public class VideoTranscoderUnit : IPipelineUnit<VideoFrame, VideoFrame>
+public sealed class VideoTranscoderUnit : IPipelineUnit<VideoFrame, VideoFrame>, IDisposable
 {
     private readonly VideoTranscoderUnitSettings _settings;
     private ILogger<VideoTranscoderUnit> _logger = null!;
@@ -61,6 +61,7 @@ public class VideoTranscoderUnit : IPipelineUnit<VideoFrame, VideoFrame>
         }
         
         _decoder = new Decoder(
+            initFrame,
             initFrame.Codec,
             initFrame.Width,
             initFrame.Height,
@@ -126,5 +127,11 @@ public class VideoTranscoderUnit : IPipelineUnit<VideoFrame, VideoFrame>
 
             raw.Dispose();
         }
+    }
+
+    public void Dispose()
+    {
+        _decoder.Dispose();
+        _encoder.Dispose();
     }
 }

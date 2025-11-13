@@ -7,6 +7,7 @@ public static class Utils
 {
     public static unsafe VideoFrame AVPacketToVideoFrame(
         AVPacket* avPacket,
+        AVCodecParameters* codecParameters,
         uint clockRate,
         Codec codec,
         int width,
@@ -17,9 +18,17 @@ public static class Utils
         var buffer = new byte[avPacket->size];
         Marshal.Copy((IntPtr)avPacket->data, buffer, 0, buffer.Length);
 
+        byte[]? extraData = null;
+        if (codecParameters != null && codecParameters->extradata != null)
+        {
+            extraData = new byte[codecParameters->extradata_size];
+            Marshal.Copy((IntPtr)codecParameters->extradata, extraData, 0, extraData.Length);
+        }
+
         return new VideoFrame
         {
             Data = buffer,
+            ExtraData = extraData,
             ClockRate = clockRate,
             Codec = codec,
             Duration = duration,

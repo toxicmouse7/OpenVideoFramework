@@ -60,7 +60,8 @@ public class MediaFileUnit : IPipelineUnit<string, CompleteFrame>
             if (packetStream->codecpar->codec_type == AVMediaType.AVMEDIA_TYPE_VIDEO)
             {
                 var frame = Utils.AVPacketToVideoFrame(
-                    packet, (uint)packetStream->time_base.den, Utils.MapCodec(packetStream->codecpar->codec_id),
+                    packet, packetStream->codecpar, (uint)packetStream->time_base.den,
+                    Utils.MapCodec(packetStream->codecpar->codec_id),
                     packetStream->codecpar->width, packetStream->codecpar->height,
                     DateTimeOffset.Now, TimeSpan.FromSeconds(packet->duration * ffmpeg.av_q2d(packetStream->time_base)));
 
