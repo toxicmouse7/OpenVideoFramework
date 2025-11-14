@@ -9,7 +9,6 @@ internal class Encoder : IDisposable
 {
     private readonly Codec _codec;
     private readonly unsafe AVCodecContext* _codecContext;
-    private readonly unsafe SwsContext* _swsContext;
     private long _frameCounter;
 
     public unsafe Encoder(
@@ -29,22 +28,13 @@ internal class Encoder : IDisposable
             throw new EncoderNotFoundException();
         }
 
-        _swsContext = ffmpeg.sws_getContext(
-            width, height, format,
-            width, height, AVPixelFormat.AV_PIX_FMT_YUVJ420P,
-            ffmpeg.SWS_BILINEAR, null, null, null);
-
-        if (_swsContext == null)
-        {
-            throw new SwsContextUnavailableException();
-        }
-
         _codecContext = ffmpeg.avcodec_alloc_context3(ffmpegCodec);
 
         _codecContext->width = width;
         _codecContext->height = height;
         _codecContext->time_base = ffmpeg.av_make_q(1, 1);
-        _codecContext->pix_fmt = AVPixelFormat.AV_PIX_FMT_YUVJ420P;
+        _codecContext->pix_fmt = format;
+        _codecContext->strict_std_compliance = ffmpeg.FF_COMPLIANCE_UNOFFICIAL;
 
         ffmpeg.avcodec_open2(_codecContext, ffmpegCodec, null);
     }
@@ -56,16 +46,6 @@ internal class Encoder : IDisposable
         var frames = Enumerable.Empty<VideoFrame>();
         var avFrame = frame.AVFrame;
         avFrame->pts = _frameCounter++;
-
-        if (avFrame->format != (int)AVPixelFormat.AV_PIX_FMT_YUVJ420P)
-        {
-            var convertedFrame = ffmpeg.av_frame_alloc();
-            ffmpeg.sws_scale_frame(_swsContext, convertedFrame, avFrame);
-            convertedFrame->duration = avFrame->duration;
-            
-            ffmpeg.av_frame_unref(avFrame);
-            avFrame = convertedFrame;
-        }
 
         ffmpeg.avcodec_send_frame(_codecContext, avFrame);
 
@@ -98,7 +78,6 @@ internal class Encoder : IDisposable
 
     private unsafe void ReleaseUnmanagedResources()
     {
-        ffmpeg.sws_freeContext(_swsContext);
         fixed (AVCodecContext** codecContext = &_codecContext)
         {
             ffmpeg.avcodec_free_context(codecContext);
