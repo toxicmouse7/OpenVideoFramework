@@ -37,10 +37,14 @@ public class RtpFrameAssemblerUnit : IPipelineUnit<RtpPacket, CompleteFrame>
 
             var frame = assembler.AddPacket(packet);
 
-            if (frame is not null)
+            if (frame is null) continue;
+
+            if (packet.Timestamp is not null)
             {
-                await writer.WriteAsync(frame, cancellationToken);
+                frame.Stamp(packet.Timestamp.Value);
             }
+                
+            await writer.WriteAsync(frame, cancellationToken);
         }
     }
 
