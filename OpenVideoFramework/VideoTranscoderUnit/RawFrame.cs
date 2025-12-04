@@ -13,6 +13,7 @@ internal class RawFrame : IDisposable
         get => _avFrame;
         init => _avFrame = value;
     }
+    public DateTimeOffset? Timestamp { get; init; }
     
     public unsafe AVPixelFormat PixelFormat => (AVPixelFormat)_avFrame->format;
 
