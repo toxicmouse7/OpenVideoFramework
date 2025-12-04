@@ -50,8 +50,10 @@ internal class Decoder : IDisposable
             { 
                 AVFrame = ffmpeg.av_frame_clone(avFrame),
                 ReceivedAt = frame.ReceivedAt,
-                ClockRate = frame.ClockRate
+                ClockRate = frame.ClockRate,
+                Timestamp = frame.Timestamp
             });
+            
             
             ffmpeg.av_frame_unref(avFrame);
         }
