@@ -153,7 +153,7 @@ public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable
 
         if (frame.Timestamp is not null)
         {
-            boundaryBuilder.Append($"X-Timestamp: {frame.Timestamp:o}");
+            boundaryBuilder.Append($"X-Timestamp: {frame.Timestamp:o}\r\n");
         }
 
         boundaryBuilder.Append("\r\n");
