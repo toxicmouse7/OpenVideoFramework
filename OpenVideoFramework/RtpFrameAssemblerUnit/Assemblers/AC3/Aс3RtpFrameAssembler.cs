@@ -4,7 +4,7 @@ using OpenVideoFramework.RtspSource.Rtp;
 
 namespace OpenVideoFramework.RtpFrameAssemblerUnit.Assemblers.AC3;
 
-public class AC3RtpFrameAssembler : RtpFrameAssembler
+public class Aс3RtpFrameAssembler : RtpFrameAssembler
 {
     private const ushort AC3SyncWord = 0x0B77;
     private const int SamplesPerFrame = 1536;
@@ -15,12 +15,12 @@ public class AC3RtpFrameAssembler : RtpFrameAssembler
         1024, 1152, 1280, 1408, 1536, 1664, 1792, 1920, 2048, 2176, 2304, 2432, 2560, 2688, 2816, 2944, 3072
     ];
 
-    private readonly ILogger<AC3RtpFrameAssembler> _logger;
+    private readonly ILogger<Aс3RtpFrameAssembler> _logger;
     private readonly List<AC3Fragment> _fragments = [];
     private uint _currentTimestamp;
     private RtpPacket _lastPacket = null!;
 
-    public AC3RtpFrameAssembler(ILogger<AC3RtpFrameAssembler> logger)
+    public Aс3RtpFrameAssembler(ILogger<Aс3RtpFrameAssembler> logger)
     {
         _logger = logger;
     }

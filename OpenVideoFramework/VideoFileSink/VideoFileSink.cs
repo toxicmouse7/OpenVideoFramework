@@ -37,7 +37,8 @@ public class VideoFileSink : IPipelineSink<VideoFrame>, IDisposable
 
     public async Task ConsumeAsync(ChannelReader<VideoFrame> input, CancellationToken cancellationToken)
     {
-        await RuntimeInitializeAsync(input, cancellationToken);
+        var initialFrame = await RuntimeInitializeAsync(input, cancellationToken);
+        WriteVideoFrame(initialFrame);
 
         await foreach (var frame in input.ReadAllAsync(cancellationToken))
         {
@@ -50,7 +51,9 @@ public class VideoFileSink : IPipelineSink<VideoFrame>, IDisposable
         }
     }
 
-    private async Task RuntimeInitializeAsync(ChannelReader<VideoFrame> input, CancellationToken cancellationToken)
+    private async Task<VideoFrame> RuntimeInitializeAsync(
+        ChannelReader<VideoFrame> input,
+        CancellationToken cancellationToken)
     {
         if (_settings.ConstantFps is null)
         {
@@ -61,9 +64,27 @@ public class VideoFileSink : IPipelineSink<VideoFrame>, IDisposable
             _frameRate = _settings.ConstantFps.Value;
         }
         
-        var frame = await input.ReadAsync(cancellationToken);
+        var frame = await ReadInitialFrameAsync(input, cancellationToken);
         
         RollFile(frame);
+        return frame;
+    }
+
+    private async Task<VideoFrame> ReadInitialFrameAsync(
+        ChannelReader<VideoFrame> input,
+        CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            var frame = await input.ReadAsync(cancellationToken);
+
+            if (frame.Codec != Codec.H264 || frame.IsKeyFrame)
+            {
+                return frame;
+            }
+
+            _logger.LogInformation("Skipping H264 non-key frame while waiting for file start.");
+        }
     }
 
     private unsafe void WriteVideoFrame(VideoFrame frame)

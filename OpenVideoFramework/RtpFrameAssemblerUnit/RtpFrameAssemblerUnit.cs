@@ -3,6 +3,7 @@ using OpenVideoFramework.Common;
 using OpenVideoFramework.Pipelines;
 using OpenVideoFramework.RtpFrameAssemblerUnit.Assemblers;
 using OpenVideoFramework.RtpFrameAssemblerUnit.Assemblers.AC3;
+using OpenVideoFramework.RtpFrameAssemblerUnit.Assemblers.H264;
 using OpenVideoFramework.RtpFrameAssemblerUnit.Assemblers.Jpeg;
 using OpenVideoFramework.RtspSource.Rtp;
 
@@ -49,7 +50,8 @@ public class RtpFrameAssemblerUnit : IPipelineUnit<RtpPacket, CompleteFrame>
         return payloadType switch
         {
             PayloadType.JPEG => new JpegRtpFrameAssembler(_context.GetLogger<JpegRtpFrameAssembler>()),
-            PayloadType.AC3 => new AC3RtpFrameAssembler(_context.GetLogger<AC3RtpFrameAssembler>()),
+            PayloadType.H264 => new H264RtpFrameAssembler(_context.GetLogger<H264RtpFrameAssembler>()),
+            PayloadType.AC3 => new Aс3RtpFrameAssembler(_context.GetLogger<Aс3RtpFrameAssembler>()),
             _ => throw new NotSupportedException($"Payload type {payloadType} is not supported.")
         };
     }
