@@ -124,7 +124,7 @@ public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable
         {
             await foreach (var frame in channel.Reader.ReadAllAsync(linkedCancellationTokenSource.Token))
             {
-                await WriteMjpegFrame(context.Response, frame.Data, linkedCancellationTokenSource.Token);
+                await WriteMjpegFrame(context.Response, frame, linkedCancellationTokenSource.Token);
             }
         }
         catch (OperationCanceledException)
@@ -142,15 +142,27 @@ public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable
 
     private static async Task WriteMjpegFrame(
         HttpResponse response,
-        byte[] jpegData,
+        VideoFrame frame,
         CancellationToken cancellationToken)
     {
-        var boundary = $"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: {jpegData.Length}\r\n\r\n";
-        var boundaryBytes = Encoding.UTF8.GetBytes(boundary);
+        var boundaryBuilder = new StringBuilder(
+            $"--frame\r\n" +
+            $"Content-Type: image/jpeg\r\n" +
+            $"Content-Length: {frame.Data.Length}\r\n" +
+            $"X-Received-At: {frame.ReceivedAt:o}\r\n");
+
+        if (frame.Timestamp is not null)
+        {
+            boundaryBuilder.Append($"X-Timestamp: {frame.Timestamp:o}\r\n");
+        }
+
+        boundaryBuilder.Append("\r\n");
+
+        var boundaryBytes = Encoding.UTF8.GetBytes(boundaryBuilder.ToString());
         var endBytes = "\r\n"u8.ToArray();
 
         await response.Body.WriteAsync(boundaryBytes, cancellationToken);
-        await response.Body.WriteAsync(jpegData, cancellationToken);
+        await response.Body.WriteAsync(frame.Data, cancellationToken);
         await response.Body.WriteAsync(endBytes, cancellationToken);
         await response.Body.FlushAsync(cancellationToken);
     }

@@ -14,4 +14,10 @@ public abstract class CompleteFrame
     public required Codec Codec { get; init; }
     public required uint ClockRate { get; init; }
     public required TimeSpan Duration { get; init; }
+    public DateTimeOffset? Timestamp { get; private set; }
+
+    public void Stamp(DateTimeOffset timestamp)
+    {
+        Timestamp = timestamp;
+    }
 }
