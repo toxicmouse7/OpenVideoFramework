@@ -23,7 +23,7 @@
     <ItemGroup>
         <PackageReference Include="FFmpeg.AutoGen.Abstractions" Version="7.1.1"/>
         <PackageReference Include="FFmpeg.AutoGen.Bindings.DynamicallyLoaded" Version="7.1.1"/>
-        <PackageReference Include="Microsoft.AspNetCore" Version="2.3.0"/>
+        <PackageReference Include="Microsoft.AspNetCore" Version="2.3.13" />
     </ItemGroup>
 
     <ItemGroup>
