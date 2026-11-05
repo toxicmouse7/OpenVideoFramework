@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Sockets;
 
 namespace OpenVideoFramework.RtspSource.Rtcp;
@@ -19,9 +19,9 @@ internal sealed class RtcpClient : IDisposable
         _rtcpClient.Connect(endPoint);
     }
 
-    public async Task SendReceiverReportAsync(RtcpReceiverReport receiverReport)
+    public async Task SendReceiverReportAsync(RtcpReceiverReport receiverReport, CancellationToken token = default)
     {
-        await _rtcpClient.SendAsync(RtcpSerializer.SerializeReceiverReport(receiverReport));
+        await _rtcpClient.SendAsync(RtcpSerializer.SerializeReceiverReport(receiverReport), token);
     }
 
     public async Task<RtcpPacket> GetPacketAsync(CancellationToken token)

@@ -1,42 +1,31 @@
-﻿using System.Threading.Channels;
-
 namespace OpenVideoFramework.Pipelines.Builder;
 
-internal sealed class ChannelSplitterElement<T> : IPipelineElement
+internal sealed class ChannelSplitterElement<T> : IPipelineElement, IDisposable
 {
-    private readonly ChannelReader<T> _reader;
-    private readonly List<ChannelWriter<T>> _branches = [];
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    public bool IsBranch => true;
+    public PipelineOutput<T> Continuation { get; } = new();
+    public PipelineOutput<T> Branch { get; } = new();
 
-    public ChannelSplitterElement(ChannelReader<T> reader)
-    {
-        _reader = reader;
-    }
+    public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken) => Task.CompletedTask;
 
-    public void AddBranch(ChannelWriter<T> branchWriter)
+    public async ValueTask ProcessAsync(T item, CancellationToken cancellationToken)
     {
-        _branches.Add(branchWriter);
-    }
-    
-    public Task PrepareForExecutionAsync(PipelineContext _, CancellationToken cancellationToken)
-    {
-        return Task.CompletedTask;
-    }
-
-    public async Task ExecuteAsync(CancellationToken cancellationToken)
-    {
-        await foreach (var item in _reader.ReadAllAsync(cancellationToken))
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            foreach (var writer in _branches)
-            {
-                await writer.WriteAsync(item, cancellationToken);
-            }
+            await Branch.EmitAsync(item, cancellationToken).ConfigureAwait(false);
+            await Continuation.EmitAsync(item, cancellationToken).ConfigureAwait(false);
         }
-        
-        foreach (var writer in _branches)
-        {
-            writer.Complete();
-        }
+        finally { _gate.Release(); }
     }
 
-    public object GetUnderlyingElement() => null!;
+    public async Task CompleteAsync(CancellationToken cancellationToken)
+    {
+        await Branch.CompleteAsync(cancellationToken).ConfigureAwait(false);
+        await Continuation.CompleteAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public object? GetUnderlyingElement() => null;
+    public void Dispose() => _gate.Dispose();
 }

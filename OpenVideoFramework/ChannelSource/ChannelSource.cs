@@ -1,4 +1,4 @@
-﻿using System.Threading.Channels;
+using System.Threading.Channels;
 using OpenVideoFramework.Pipelines;
 
 namespace OpenVideoFramework.ChannelSource;
@@ -17,11 +17,11 @@ public class ChannelSource<TSource> : IPipelineSource<TSource>
         return Task.CompletedTask;
     }
 
-    public async Task ProduceAsync(ChannelWriter<TSource> output, CancellationToken cancellationToken)
+    public async Task ProduceAsync(Emit<TSource> emit, CancellationToken cancellationToken)
     {
         await foreach (var item in _source.Reader.ReadAllAsync(cancellationToken))
         {
-            await output.WriteAsync(item, cancellationToken);
+            await emit(item, cancellationToken);
         }
     }
 }

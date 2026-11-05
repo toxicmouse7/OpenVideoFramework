@@ -1,5 +1,4 @@
-﻿using System.Diagnostics;
-using System.Threading.Channels;
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using OpenVideoFramework.Pipelines;
 using OpenVideoFramework.RtspSource.Rtcp;
@@ -11,8 +10,9 @@ namespace OpenVideoFramework.RtspSource;
 /// Connects to an RTSP video stream and outputs RTP packets for pipeline processing.
 /// Supports multiple tracks and maintains stream synchronization and statistics.
 /// </summary>
-public class RtspSource : IPipelineSource<RtpPacket>
+public class RtspSource : IPipelineSource<RtpPacket>, IDisposable
 {
+    private readonly object _statisticsLock = new();
     private readonly RtspClient _rtspClient;
     private readonly RtcpStatisticsService _statisticsService = new();
     private readonly RtpTimestampSynchronizer _timestampSynchronizer = new();
@@ -32,7 +32,7 @@ public class RtspSource : IPipelineSource<RtpPacket>
 
         await _rtspClient.ConnectAsync(cancellationToken);
 
-        var metadata = await _rtspClient.DescribeAsync();
+        var metadata = await _rtspClient.DescribeAsync(cancellationToken);
 
         foreach (var trackMetadata in metadata)
         {
@@ -43,7 +43,7 @@ public class RtspSource : IPipelineSource<RtpPacket>
                 continue;
             }
 
-            var trackReceiver = await _rtspClient.SetupAsync(trackMetadata);
+            var trackReceiver = await _rtspClient.SetupAsync(trackMetadata, cancellationToken);
             _trackReceivers.Add(trackReceiver);
 
             _logger.LogInformation(
@@ -52,17 +52,40 @@ public class RtspSource : IPipelineSource<RtpPacket>
         }
     }
 
-    public async Task ProduceAsync(ChannelWriter<RtpPacket> output, CancellationToken cancellationToken)
+    public async Task ProduceAsync(Emit<RtpPacket> emit, CancellationToken cancellationToken)
     {
         await _rtspClient.PlayAsync(cancellationToken);
         _logger.LogInformation("Playing RTSP stream.");
+        if (_trackReceivers.Count == 0) return;
 
-        var producingTasks = _trackReceivers.Select(r => ProduceRtpPackets(r, output, cancellationToken));
-        var calculatingTasks = _trackReceivers.Select(r => CalculateRtcpStatistics(r, cancellationToken));
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        Exception? failure = null;
+        async Task Supervise(Func<Task> action)
+        {
+            try { await action().ConfigureAwait(false); }
+            catch (Exception ex)
+            {
+                if (ex is not OperationCanceledException || !cts.IsCancellationRequested)
+                    Interlocked.CompareExchange(ref failure, ex, null);
+                await cts.CancelAsync();
+                throw;
+            }
+        }
 
-        var allTasks = producingTasks.Concat(calculatingTasks);
-
-        await Task.WhenAll(allTasks);
+        var tasks = new List<Task>();
+        tasks.Add(Supervise(() => _rtspClient.KeepAliveAsync(cts.Token)));
+        foreach (var receiver in _trackReceivers)
+        {
+            tasks.Add(Supervise(() => ProduceRtpPackets(receiver, emit, cts.Token)));
+            tasks.Add(Supervise(() => CalculateRtcpStatistics(receiver, cts.Token)));
+        }
+        try { await Task.WhenAll(tasks).ConfigureAwait(false); }
+        catch
+        {
+            if (failure is not null)
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
+            throw;
+        }
     }
 
     private async Task CalculateRtcpStatistics(TrackReceiver trackReceiver, CancellationToken token)
@@ -73,15 +96,18 @@ public class RtspSource : IPipelineSource<RtpPacket>
 
             if (rtcpPacket is RtcpSenderReport senderReport)
             {
-                _timestampSynchronizer.UpdateFromSenderReport(senderReport);
-                _statisticsService.UpdateStatistics(senderReport);
+                lock (_statisticsLock)
+                {
+                    _timestampSynchronizer.UpdateFromSenderReport(senderReport);
+                    _statisticsService.UpdateStatistics(senderReport);
+                }
             }
         }
     }
 
     private async Task ProduceRtpPackets(
         TrackReceiver trackReceiver,
-        ChannelWriter<RtpPacket> output,
+        Emit<RtpPacket> emit,
         CancellationToken token)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -90,35 +116,42 @@ public class RtspSource : IPipelineSource<RtpPacket>
         {
             var rtpPacket = await trackReceiver.RtpClient.GetPacketAsync(token);
 
-            _statisticsService.UpdateStatistics(rtpPacket, trackReceiver.Metadata.ClockRate, rtpPacket.ReceivedAt);
+            lock (_statisticsLock)
+                _statisticsService.UpdateStatistics(rtpPacket, trackReceiver.Metadata.ClockRate, rtpPacket.ReceivedAt);
 
             if (stopwatch.Elapsed > TimeSpan.FromSeconds(5))
             {
-                stopwatch.Reset();
-                _ = Task.Run(async () =>
-                {
-                    var receiverReport = _statisticsService.GetReceiverReport(rtpPacket.Header.SSRC);
-
-                    if (receiverReport is not null)
-                    {
-                        await trackReceiver.RtcpClient.SendReceiverReportAsync(receiverReport);
-                    }
-
-                    stopwatch.Start();
-                }, token);
+                RtcpReceiverReport? receiverReport;
+                lock (_statisticsLock)
+                    receiverReport = _statisticsService.GetReceiverReport(rtpPacket.Header.SSRC);
+                if (receiverReport is not null)
+                    await trackReceiver.RtcpClient.SendReceiverReportAsync(receiverReport, token);
+                stopwatch.Restart();
             }
 
-            var timestamp = _timestampSynchronizer.ConvertRtpTimestampToUtc(
-                rtpPacket.Header.SSRC,
-                rtpPacket.Header.Timestamp,
-                trackReceiver.Metadata.ClockRate);
+            DateTimeOffset? timestamp;
+            lock (_statisticsLock)
+                timestamp = _timestampSynchronizer.ConvertRtpTimestampToUtc(
+                    rtpPacket.Header.SSRC,
+                    rtpPacket.Header.Timestamp,
+                    trackReceiver.Metadata.ClockRate);
 
             if (timestamp is not null)
             {
                 rtpPacket.Stamp(timestamp.Value);
             }
 
-            await output.WriteAsync(rtpPacket, token);
+            await emit(rtpPacket, token);
         }
+    }
+
+    public void Dispose()
+    {
+        foreach (var receiver in _trackReceivers)
+        {
+            receiver.RtpClient.Dispose();
+            receiver.RtcpClient.Dispose();
+        }
+        _rtspClient.Dispose();
     }
 }

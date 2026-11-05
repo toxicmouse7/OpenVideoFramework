@@ -1,5 +1,4 @@
-﻿using System.Runtime.InteropServices;
-using System.Threading.Channels;
+using System.Runtime.InteropServices;
 using FFmpeg.AutoGen.Abstractions;
 using OpenVideoFramework.Common;
 using OpenVideoFramework.Pipelines;
@@ -26,26 +25,17 @@ public class AudioFileSink : IPipelineSink<AudioFrame>, IDisposable
         return Task.CompletedTask;
     }
 
-    public async Task ConsumeAsync(ChannelReader<AudioFrame> input, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(AudioFrame frame, CancellationToken cancellationToken)
     {
-        RuntimeInitialize(await input.ReadAsync(cancellationToken));
-
-        await foreach (var frame in input.ReadAllAsync(cancellationToken))
-        {
-            if (_totalDuration >= _settings.RollPeriod)
-            {
-                RollFile(frame);
-            }
-
-            WritePacketToContainer(frame);
-        }
-
-        ReleaseUnmanagedResources();
+        cancellationToken.ThrowIfCancellationRequested();
+        ConsumeFrame(frame);
+        return ValueTask.CompletedTask;
     }
 
-    private void RuntimeInitialize(AudioFrame frame)
+    private unsafe void ConsumeFrame(AudioFrame frame)
     {
-        RollFile(frame);
+        if (_formatContext == null || _totalDuration >= _settings.RollPeriod)
+            RollFile(frame);
         WritePacketToContainer(frame);
     }
 
@@ -140,9 +130,12 @@ public class AudioFileSink : IPipelineSink<AudioFrame>, IDisposable
 
     private unsafe void ReleaseUnmanagedResources()
     {
+        if (_formatContext == null) return;
         ffmpeg.av_write_trailer(_formatContext);
         ffmpeg.avio_closep(&_formatContext->pb);
         ffmpeg.avformat_free_context(_formatContext);
+        _formatContext = null;
+        _audioStream = null;
     }
 
     public void Dispose()

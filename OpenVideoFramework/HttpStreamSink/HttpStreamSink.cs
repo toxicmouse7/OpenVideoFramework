@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Text;
 using System.Threading.Channels;
 using Microsoft.AspNetCore;
@@ -15,11 +15,16 @@ namespace OpenVideoFramework.HttpStreamSink;
 /// Streams video frames as MJPEG over HTTP for real-time web viewing.
 /// Creates a web server that serves a live video stream accessible via web browsers.
 /// </summary>
-public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable
+public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable, IAsyncDisposable
 {
     private readonly IWebHost _host;
     private readonly List<Channel<VideoFrame>> _channels;
-    private readonly SemaphoreSlim _channelsSemaphore;
+    private readonly object _channelsLock = new();
+    private readonly CancellationTokenSource _shutdown = new();
+    private readonly Stopwatch _stopwatch = new();
+    private bool _stopped;
+    private bool _hostStarted;
+    private bool _disposed;
     private CancellationToken _cancellationToken = CancellationToken.None;
 
     private ILogger<HttpStreamSink> _logger = null!;
@@ -27,7 +32,7 @@ public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable
     public HttpStreamSink(HttpStreamSinkSettings settings)
     {
         _channels = [];
-        _channelsSemaphore = new SemaphoreSlim(1, 1);
+
         _host = WebHost.CreateDefaultBuilder()
             .UseKestrel()
             .UseUrls($"http://*:{settings.Port}")
@@ -55,88 +60,86 @@ public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable
         _logger = context.GetLogger<HttpStreamSink>();
         _cancellationToken = cancellationToken;
         await _host.StartAsync(cancellationToken);
+        _hostStarted = true;
         
         _logger.LogInformation("HTTP stream prepared.");
     }
 
-    public async Task ConsumeAsync(ChannelReader<VideoFrame> input, CancellationToken cancellationToken)
+    public async ValueTask ConsumeAsync(VideoFrame frame, CancellationToken cancellationToken)
     {
-        try
+        cancellationToken.ThrowIfCancellationRequested();
+        if (frame.Codec != Codec.MJPEG)
+            throw new ArgumentException($"Only JPEG streams are supported. Received codec: {frame.Codec}");
+
+        if (!_stopwatch.IsRunning) _stopwatch.Start();
+        lock (_channelsLock)
         {
-            var stopwatch = Stopwatch.StartNew();
-            await foreach (var frame in input.ReadAllAsync(cancellationToken))
-            {
-                if (frame.Codec != Codec.MJPEG)
-                {
-                    throw new ArgumentException($"Only JPEG streams are supported. Received codec: {frame.Codec}");
-                }
-            
-                await _channelsSemaphore.WaitAsync(cancellationToken);
-                foreach (var clientChannel in _channels)
-                {
-                    await clientChannel.Writer.WriteAsync(frame, cancellationToken);
-                }
-                _channelsSemaphore.Release();
-            
-                stopwatch.Stop();
-                if (stopwatch.Elapsed < frame.Duration)
-                {
-                    await Task.Delay(frame.Duration - stopwatch.Elapsed, cancellationToken);
-                }
-                stopwatch.Restart();
-            }
-        }
-        catch (OperationCanceledException e) when (e.CancellationToken == cancellationToken)
-        {
+            foreach (var channel in _channels)
+                channel.Writer.TryWrite(frame);
         }
 
-        try
+        var remaining = frame.Duration - _stopwatch.Elapsed;
+        if (remaining > TimeSpan.Zero)
+            await Task.Delay(remaining, cancellationToken);
+        _stopwatch.Restart();
+    }
+
+    public async ValueTask CompleteAsync(CancellationToken cancellationToken)
+    {
+        lock (_channelsLock)
         {
-            await _host.StopAsync(TimeSpan.Zero);
-            _logger.LogInformation("HTTP stream stopped.");
+            _stopped = true;
+            foreach (var channel in _channels) channel.Writer.TryComplete();
         }
-        catch (Exception e)
+        await _shutdown.CancelAsync();
+        if (_hostStarted)
         {
-            _logger.LogError(e, "An error occurred while stopping the HTTP stream.");
+            await _host.StopAsync(cancellationToken);
+            _hostStarted = false;
+            _logger.LogInformation("HTTP stream stopped.");
         }
     }
 
     private async Task HandleJpegStream(HttpContext context)
     {
-        var channel = Channel.CreateUnbounded<VideoFrame>(new UnboundedChannelOptions
+        var channel = Channel.CreateBounded<VideoFrame>(new BoundedChannelOptions(2)
         {
             SingleReader = true,
-            SingleWriter = true
+            SingleWriter = true,
+            FullMode = BoundedChannelFullMode.DropOldest
         });
-        
-        using var linkedCancellationTokenSource = CancellationTokenSource
-            .CreateLinkedTokenSource(_cancellationToken, context.RequestAborted);
-        
-        await _channelsSemaphore.WaitAsync(linkedCancellationTokenSource.Token);
-        _channels.Add(channel);
-        _channelsSemaphore.Release();
-        
-        context.Response.ContentType = "multipart/x-mixed-replace; boundary=frame";
-        context.Response.Headers.Append("Cache-Control", "no-cache");
-        context.Response.Headers.Append("Connection", "keep-alive");
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(
+            _cancellationToken, _shutdown.Token, context.RequestAborted);
+
+        lock (_channelsLock)
+        {
+            if (_stopped)
+            {
+                context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                return;
+            }
+            _channels.Add(channel);
+        }
 
         try
         {
-            await foreach (var frame in channel.Reader.ReadAllAsync(linkedCancellationTokenSource.Token))
-            {
-                await WriteMjpegFrame(context.Response, frame, linkedCancellationTokenSource.Token);
-            }
+            context.Response.ContentType = "multipart/x-mixed-replace; boundary=frame";
+            context.Response.Headers.Append("Cache-Control", "no-cache");
+            context.Response.Headers.Append("Connection", "keep-alive");
+            await foreach (var frame in channel.Reader.ReadAllAsync(cts.Token))
+                await WriteMjpegFrame(context.Response, frame, cts.Token);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
             _logger.LogInformation("Client disconnected from HTTP stream.");
         }
         finally
         {
-            await _channelsSemaphore.WaitAsync(TimeSpan.FromSeconds(3), CancellationToken.None);
-            _channels.Remove(channel);
-            channel.Writer.Complete();
-            _channelsSemaphore.Release();
+            lock (_channelsLock)
+            {
+                _channels.Remove(channel);
+                channel.Writer.TryComplete();
+            }
         }
     }
 
@@ -167,9 +170,20 @@ public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable
         await response.Body.FlushAsync(cancellationToken);
     }
 
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed) return;
+        try { await CompleteAsync(CancellationToken.None); }
+        finally { Dispose(); }
+    }
+
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
+        _shutdown.Cancel();
         _host.Dispose();
+        _shutdown.Dispose();
         GC.SuppressFinalize(this);
     }
 }

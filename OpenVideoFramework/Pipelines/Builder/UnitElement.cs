@@ -1,44 +1,34 @@
-﻿using System.Threading.Channels;
-
 namespace OpenVideoFramework.Pipelines.Builder;
 
-internal class UnitElement<TInput, TOutput> : IPipelineElement, IDisposable
+internal sealed class UnitElement<TInput, TOutput>(IPipelineUnit<TInput, TOutput> unit) : IPipelineElement, IDisposable
 {
-    private readonly IPipelineUnit<TInput, TOutput> _unit;
-    private readonly ChannelReader<TInput> _reader;
-    private readonly ChannelWriter<TOutput> _writer;
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    public PipelineOutput<TOutput> Output { get; } = new();
 
-    public UnitElement(IPipelineUnit<TInput, TOutput> unit, ChannelReader<TInput> reader, ChannelWriter<TOutput> writer)
-    {
-        _unit = unit;
-        _reader = reader;
-        _writer = writer;
-    }
+    public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken) =>
+        unit.PrepareForExecutionAsync(context, cancellationToken);
 
-    public async Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken)
+    public async ValueTask ProcessAsync(TInput input, CancellationToken cancellationToken)
     {
-        await _unit.PrepareForExecutionAsync(context, cancellationToken);
-    }
-
-    public async Task ExecuteAsync(CancellationToken cancellationToken)
-    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await _unit.ProcessAsync(_reader, _writer, cancellationToken);
+            await unit.ProcessAsync(input, Output.EmitAsync, cancellationToken).ConfigureAwait(false);
         }
-        finally
-        {
-            _writer.Complete();
-        }
+        finally { _gate.Release(); }
     }
 
-    public object GetUnderlyingElement() => _unit;
-
-    public void Dispose()
+    public async Task CompleteAsync(CancellationToken cancellationToken)
     {
-        if (_unit is IDisposable disposable)
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            disposable.Dispose();
+            await unit.CompleteAsync(Output.EmitAsync, cancellationToken).ConfigureAwait(false);
+            await Output.CompleteAsync(cancellationToken).ConfigureAwait(false);
         }
+        finally { _gate.Release(); }
     }
+
+    public object GetUnderlyingElement() => unit;
+    public void Dispose() => _gate.Dispose();
 }

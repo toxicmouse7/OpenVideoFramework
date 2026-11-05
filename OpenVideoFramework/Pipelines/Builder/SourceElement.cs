@@ -1,42 +1,18 @@
-﻿using System.Threading.Channels;
-
 namespace OpenVideoFramework.Pipelines.Builder;
 
-internal class SourceElement<TOutput> : IPipelineElement, IDisposable
+internal sealed class SourceElement<TOutput>(IPipelineSource<TOutput> source) : IPipelineElement
 {
-    private readonly IPipelineSource<TOutput> _source;
-    private readonly ChannelWriter<TOutput> _writer;
+    public PipelineOutput<TOutput> Output { get; } = new();
 
-    public SourceElement(IPipelineSource<TOutput> source, ChannelWriter<TOutput> writer)
-    {
-        _source = source;
-        _writer = writer;
-    }
-
-    public async Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken)
-    {
-        await _source.PrepareForExecutionAsync(context, cancellationToken);
-    }
+    public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken) =>
+        source.PrepareForExecutionAsync(context, cancellationToken);
 
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        try
-        {
-            await _source.ProduceAsync(_writer, cancellationToken);
-        }
-        finally
-        {
-            _writer.Complete();
-        }
+        await source.ProduceAsync(Output.EmitAsync, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        await Output.CompleteAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public object GetUnderlyingElement() => _source;
-
-    public void Dispose()
-    {
-        if (_source is IDisposable disposable)
-        {
-            disposable.Dispose();
-        }
-    }
+    public object GetUnderlyingElement() => source;
 }
