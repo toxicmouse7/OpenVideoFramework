@@ -1,35 +1,26 @@
-﻿using System.Threading.Channels;
-
 namespace OpenVideoFramework.Pipelines.Builder;
 
-internal class SinkElement<TInput> : IPipelineElement, IDisposable
+internal sealed class SinkElement<TInput>(IPipelineSink<TInput> sink) : IPipelineElement, IDisposable
 {
-    private readonly IPipelineSink<TInput> _sink;
-    private readonly ChannelReader<TInput> _reader;
+    private readonly SemaphoreSlim _gate = new(1, 1);
 
-    public SinkElement(IPipelineSink<TInput> sink, ChannelReader<TInput> reader)
+    public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken) =>
+        sink.PrepareForExecutionAsync(context, cancellationToken);
+
+    public async ValueTask ProcessAsync(TInput input, CancellationToken cancellationToken)
     {
-        _sink = sink;
-        _reader = reader;
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try { await sink.ConsumeAsync(input, cancellationToken).ConfigureAwait(false); }
+        finally { _gate.Release(); }
     }
 
-    public async Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken)
+    public async Task CompleteAsync(CancellationToken cancellationToken)
     {
-        await _sink.PrepareForExecutionAsync(context, cancellationToken);
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try { await sink.CompleteAsync(cancellationToken).ConfigureAwait(false); }
+        finally { _gate.Release(); }
     }
 
-    public async Task ExecuteAsync(CancellationToken cancellationToken)
-    {
-        await _sink.ConsumeAsync(_reader, cancellationToken);
-    }
-
-    public object GetUnderlyingElement() => _sink;
-
-    public void Dispose()
-    {
-        if (_sink is IDisposable disposable)
-        {
-            disposable.Dispose();
-        }
-    }
+    public object GetUnderlyingElement() => sink;
+    public void Dispose() => _gate.Dispose();
 }

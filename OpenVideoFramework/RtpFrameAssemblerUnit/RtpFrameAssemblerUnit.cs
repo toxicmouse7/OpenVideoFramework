@@ -1,4 +1,3 @@
-﻿using System.Threading.Channels;
 using OpenVideoFramework.Common;
 using OpenVideoFramework.Pipelines;
 using OpenVideoFramework.RtpFrameAssemblerUnit.Assemblers;
@@ -14,7 +13,7 @@ namespace OpenVideoFramework.RtpFrameAssemblerUnit;
 /// </summary>
 public class RtpFrameAssemblerUnit : IPipelineUnit<RtpPacket, CompleteFrame>
 {
-    private readonly Dictionary<uint, RtpFrameAssembler> _assemblers = new();
+    private readonly Dictionary<uint, RtpFrameAssembler> _assemblers = [];
     private PipelineContext _context = null!;
 
     public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken)
@@ -23,30 +22,30 @@ public class RtpFrameAssemblerUnit : IPipelineUnit<RtpPacket, CompleteFrame>
         return Task.CompletedTask;
     }
 
-    public async Task ProcessAsync(
-        ChannelReader<RtpPacket> reader,
-        ChannelWriter<CompleteFrame> writer,
+    public async ValueTask ProcessAsync(
+        RtpPacket packet,
+        Emit<CompleteFrame> emit,
         CancellationToken cancellationToken)
     {
-        await foreach (var packet in reader.ReadAllAsync(cancellationToken))
+        if (!_assemblers.TryGetValue(packet.Header.SSRC, out var assembler))
         {
-            if (!_assemblers.TryGetValue(packet.Header.SSRC, out var assembler))
-            {
-                assembler = CreateAssembler(packet.Header.PayloadType);
-                _assemblers.Add(packet.Header.SSRC, assembler);
-            }
-
-            var frame = assembler.AddPacket(packet);
-
-            if (frame is null) continue;
-
-            if (packet.Timestamp is not null)
-            {
-                frame.Stamp(packet.Timestamp.Value);
-            }
-                
-            await writer.WriteAsync(frame, cancellationToken);
+            assembler = CreateAssembler(packet.Header.PayloadType);
+            _assemblers.Add(packet.Header.SSRC, assembler);
         }
+
+        var frame = assembler.AddPacket(packet);
+
+        if (frame is null)
+        {
+            return;
+        }
+
+        if (packet.Timestamp is not null)
+        {
+            frame.Stamp(packet.Timestamp.Value);
+        }
+
+        await emit(frame, cancellationToken);
     }
 
     private RtpFrameAssembler CreateAssembler(PayloadType payloadType)

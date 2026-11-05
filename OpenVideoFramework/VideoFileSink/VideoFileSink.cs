@@ -1,6 +1,5 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Threading.Channels;
 using FFmpeg.AutoGen.Abstractions;
 using Microsoft.Extensions.Logging;
 using OpenVideoFramework.Common;
@@ -19,6 +18,10 @@ public class VideoFileSink : IPipelineSink<VideoFrame>, IDisposable
     private unsafe AVStream* _videoStream;
     private int _frameCount;
     private double _frameRate;
+    private readonly Stopwatch _estimation = new();
+    private int _estimationFrames;
+    private bool _frameRateEstimated;
+    private bool _initialized;
 
     public VideoFileSink(VideoFileSinkSettings settings)
     {
@@ -35,56 +38,43 @@ public class VideoFileSink : IPipelineSink<VideoFrame>, IDisposable
         return Task.CompletedTask;
     }
 
-    public async Task ConsumeAsync(ChannelReader<VideoFrame> input, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(VideoFrame frame, CancellationToken cancellationToken)
     {
-        var initialFrame = await RuntimeInitializeAsync(input, cancellationToken);
-        WriteVideoFrame(initialFrame);
-
-        await foreach (var frame in input.ReadAllAsync(cancellationToken))
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!_initialized)
         {
-            if (Duration >= _settings.RollPeriod && frame.IsKeyFrame)
+            if (_settings.ConstantFps is null && !_frameRateEstimated)
             {
-                RollFile(frame);
+                if (!_estimation.IsRunning)
+                {
+                    _logger.LogInformation("Waiting for video frames to estimate framerate.");
+                    _estimation.Start();
+                }
+                _estimationFrames++;
+                if (_estimation.Elapsed.TotalSeconds < 10) return ValueTask.CompletedTask;
+                _estimation.Stop();
+                _frameRate = _estimationFrames / _estimation.Elapsed.TotalSeconds;
+                _frameRateEstimated = true;
+                _logger.LogInformation("Estimated frame rate: {frameRate}.", _frameRate);
+                return ValueTask.CompletedTask;
             }
 
-            WriteVideoFrame(frame);
-        }
-    }
-
-    private async Task<VideoFrame> RuntimeInitializeAsync(
-        ChannelReader<VideoFrame> input,
-        CancellationToken cancellationToken)
-    {
-        if (_settings.ConstantFps is null)
-        {
-            _frameRate = await EstimateFrameRateAsync(input, cancellationToken);
-        }
-        else
-        {
-            _frameRate = _settings.ConstantFps.Value;
-        }
-        
-        var frame = await ReadInitialFrameAsync(input, cancellationToken);
-        
-        RollFile(frame);
-        return frame;
-    }
-
-    private async Task<VideoFrame> ReadInitialFrameAsync(
-        ChannelReader<VideoFrame> input,
-        CancellationToken cancellationToken)
-    {
-        while (true)
-        {
-            var frame = await input.ReadAsync(cancellationToken);
-
-            if (frame.Codec != Codec.H264 || frame.IsKeyFrame)
+            if (frame.Codec == Codec.H264 && !frame.IsKeyFrame)
             {
-                return frame;
+                _logger.LogInformation("Skipping H264 non-key frame while waiting for file start.");
+                return ValueTask.CompletedTask;
             }
-
-            _logger.LogInformation("Skipping H264 non-key frame while waiting for file start.");
+            _frameRate = _settings.ConstantFps ?? _frameRate;
+            RollFile(frame);
+            _initialized = true;
         }
+        else if (Duration >= _settings.RollPeriod && frame.IsKeyFrame)
+        {
+            RollFile(frame);
+        }
+
+        WriteVideoFrame(frame);
+        return ValueTask.CompletedTask;
     }
 
     private unsafe void WriteVideoFrame(VideoFrame frame)
@@ -105,33 +95,6 @@ public class VideoFileSink : IPipelineSink<VideoFrame>, IDisposable
         ffmpeg.av_packet_free(&packet);
         
         _frameCount++;
-    }
-
-    private async Task<double> EstimateFrameRateAsync(
-        ChannelReader<VideoFrame> input,
-        CancellationToken cancellationToken)
-    {
-        _logger.LogInformation("Waiting for video frames to estimate framerate.");
-        await input.WaitToReadAsync(cancellationToken);
-        _logger.LogInformation("Estimation started.");
-
-        var framesCount = 0;
-        var sw = Stopwatch.StartNew();
-        
-        await foreach (var _ in input.ReadAllAsync(cancellationToken))
-        {
-            framesCount++;
-            if (sw.Elapsed.TotalSeconds < 10) continue;
-
-            sw.Stop();
-            break;
-        }
-        
-        var frameRate = framesCount / sw.Elapsed.TotalSeconds;
-
-        _logger.LogInformation("Estimated frame rate: {frameRate}.", frameRate);
-        
-        return frameRate;
     }
 
     private unsafe void RollFile(VideoFrame frame)
@@ -189,9 +152,12 @@ public class VideoFileSink : IPipelineSink<VideoFrame>, IDisposable
 
     private unsafe void ReleaseUnmanagedResources()
     {
+        if (_formatContext == null) return;
         ffmpeg.av_write_trailer(_formatContext);
         ffmpeg.avio_closep(&_formatContext->pb);
         ffmpeg.avformat_free_context(_formatContext);
+        _formatContext = null;
+        _videoStream = null;
     }
 
     public void Dispose()

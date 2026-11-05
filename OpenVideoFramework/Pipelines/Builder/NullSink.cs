@@ -1,27 +1,16 @@
-using System.Threading.Channels;
-
 namespace OpenVideoFramework.Pipelines.Builder;
 
-internal class NullSink<TInput> : IPipelineSink<TInput>
+internal sealed class NullSink<TInput>(bool disposeItems) : IPipelineSink<TInput>
 {
-    public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken)
-    {
-        return Task.CompletedTask;
-    }
+    public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken) => Task.CompletedTask;
 
-    public async Task ConsumeAsync(ChannelReader<TInput> input, CancellationToken cancellationToken)
+    public async ValueTask ConsumeAsync(TInput input, CancellationToken cancellationToken)
     {
-        await foreach (var data in input.ReadAllAsync(cancellationToken))
-        {
-            switch (data)
-            {
-                case IAsyncDisposable asyncDisposable:
-                    await asyncDisposable.DisposeAsync();
-                    break;
-                case IDisposable disposable:
-                    disposable.Dispose();
-                    break;
-            }
-        }
+        // An item can still be in use by a buffered branch; the producer owns shared items.
+        if (!disposeItems) return;
+        if (input is IAsyncDisposable asyncDisposable)
+            await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+        else if (input is IDisposable disposable)
+            disposable.Dispose();
     }
 }

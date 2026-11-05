@@ -1,4 +1,3 @@
-﻿using System.Threading.Channels;
 using OpenVideoFramework.Common;
 using OpenVideoFramework.Pipelines;
 
@@ -16,17 +15,14 @@ public class FrameFilterUnit<TFrameType> : IPipelineUnit<CompleteFrame, TFrameTy
         return Task.CompletedTask;
     }
 
-    public async Task ProcessAsync(
-        ChannelReader<CompleteFrame> reader,
-        ChannelWriter<TFrameType> writer,
+    public async ValueTask ProcessAsync(
+        CompleteFrame input,
+        Emit<TFrameType> emit,
         CancellationToken cancellationToken)
     {
-        await foreach (var frame in reader.ReadAllAsync(cancellationToken))
+        if (input is TFrameType desiredFrame)
         {
-            if (frame is TFrameType desiredFrame)
-            {
-                await writer.WriteAsync(desiredFrame, cancellationToken);
-            }
+            await emit(desiredFrame, cancellationToken);
         }
     }
 }
