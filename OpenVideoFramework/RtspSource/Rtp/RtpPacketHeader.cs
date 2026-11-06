@@ -14,6 +14,6 @@ public record struct RtpPacketHeader(
 {
     public const int Version = 2;
     public const short ExtensionsHeaderId = 0;
-    
+
     public const int Size = 12;
 }

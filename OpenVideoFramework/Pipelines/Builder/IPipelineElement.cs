@@ -15,7 +15,10 @@ internal sealed class PipelineOutput<T>
     public void Connect(Emit<T> emit, Func<CancellationToken, Task> complete)
     {
         if (_emit is not null)
+        {
             throw new InvalidOperationException("This pipeline output is already connected.");
+        }
+
         _emit = emit;
         _complete = complete;
     }

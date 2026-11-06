@@ -1,4 +1,4 @@
-﻿using OpenVideoFramework.Common;
+using OpenVideoFramework.Common;
 using OpenVideoFramework.RtspSource.Rtp;
 
 namespace OpenVideoFramework.RtspSource.SDP;
@@ -31,9 +31,11 @@ internal class SdpParser
                     currentMetadata.PayloadType = Enum.TryParse<PayloadType>(codecParts[0], true, out var payload)
                         ? payload
                         : PayloadType.Unknown;
-                    
+
                     if (codecParts.Length > 1)
+                    {
                         currentMetadata.ClockRate = uint.Parse(codecParts[1]);
+                    }
                 }
             }
             else if (line.StartsWith("a=fmtp:"))

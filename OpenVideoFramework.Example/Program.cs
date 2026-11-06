@@ -23,11 +23,13 @@ var loggerFactory = new SerilogLoggerFactory(logger);
 var pipelineContext = new PipelineContext("My pipeline", loggerFactory);
 
 var pipeline = PipelineBuilder
-    .From(pipelineContext, new RtspSource(new RtspSourceConfiguration
-    {
-        Url = "rtsp://172.17.91.213:8554/",
-        AllowedMediaType = MediaType.Video
-    }))
+    .From(
+        pipelineContext,
+        new RtspSource(new RtspSourceConfiguration
+        {
+            Url = "rtsp://172.17.91.213:8554/",
+            AllowedMediaType = MediaType.Video
+        }))
     .Buffer(256)
     .To(new RtpFrameAssemblerUnit())
     .To(new FrameFilterUnit<VideoFrame>())

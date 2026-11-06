@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using FFmpeg.AutoGen.Abstractions;
 
 namespace OpenVideoFramework.Common;
@@ -38,7 +38,7 @@ public static class Utils
             Width = width
         };
     }
-    
+
     public static Codec MapCodec(AVCodecID codec)
     {
         return codec switch

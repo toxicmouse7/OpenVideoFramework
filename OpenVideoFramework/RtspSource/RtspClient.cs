@@ -20,7 +20,7 @@ internal partial class RtspClient : IDisposable
     private int? _timeout;
     private string _digestNonce = null!;
     private string _digestRealm = null!;
-    
+
     public RtspClient(string url)
     {
         _url = new Uri(url);
@@ -31,10 +31,8 @@ internal partial class RtspClient : IDisposable
         _url = new Uri(url.Replace($"{_url.UserInfo}@", string.Empty));
     }
 
-    public async Task ConnectAsync(CancellationToken token)
-    {
+    public async Task ConnectAsync(CancellationToken token) =>
         await _rtspClient.ConnectAsync(_url.Host, _url.Port, token);
-    }
 
     public async Task OptionsAsync(CancellationToken token = default)
     {
@@ -72,7 +70,11 @@ internal partial class RtspClient : IDisposable
 
         try
         {
-            await SendRequestAsync(stream, "SETUP", trackUrl, token,
+            await SendRequestAsync(
+                stream,
+                "SETUP",
+                trackUrl,
+                token,
                 CreateAuthHeader("SETUP", _url.PathAndQuery),
                 CreateTransportHeader(rtpClient, rtcpClient));
 
@@ -123,7 +125,11 @@ internal partial class RtspClient : IDisposable
 
     public async Task KeepAliveAsync(CancellationToken token)
     {
-        if (_timeout is null) return;
+        if (_timeout is null)
+        {
+            return;
+        }
+
         var timeout = TimeSpan.FromSeconds(_timeout.Value * 0.66);
         while (true)
         {
@@ -136,11 +142,16 @@ internal partial class RtspClient : IDisposable
     public async Task GetParameterAsync(CancellationToken token = default)
     {
         var stream = _rtspClient.GetStream();
-        
-        await SendRequestAsync(stream, "GET_PARAMETER", _url, token, CreateAuthHeader("GET_PARAMETER", _url.PathAndQuery));
+
+        await SendRequestAsync(
+            stream,
+            "GET_PARAMETER",
+            _url,
+            token,
+            CreateAuthHeader("GET_PARAMETER", _url.PathAndQuery));
         await ReadResponseAsync(stream, token);
     }
-    
+
     private async Task SendRequestAsync(
         NetworkStream stream,
         string method,
@@ -159,7 +170,9 @@ internal partial class RtspClient : IDisposable
         }
 
         if (!string.IsNullOrEmpty(_sessionId))
+        {
             request.Append($"Session: {_sessionId}\r\n");
+        }
 
         request.Append("\r\n");
 
@@ -173,7 +186,7 @@ internal partial class RtspClient : IDisposable
     {
         var bytesRead = 0;
         var buffer = new byte[4096];
-        
+
         while (true)
         {
             var read = await stream.ReadAsync(buffer.AsMemory(bytesRead, buffer.Length - bytesRead), token);
@@ -183,7 +196,7 @@ internal partial class RtspClient : IDisposable
             }
 
             bytesRead += read;
-            
+
             var responseStr = Encoding.ASCII.GetString(buffer, 0, bytesRead);
             if (responseStr.Contains("\r\n\r\n"))
             {
@@ -202,7 +215,7 @@ internal partial class RtspClient : IDisposable
                     break;
                 }
             }
-            
+
             if (bytesRead == buffer.Length)
             {
                 Array.Resize(ref buffer, buffer.Length * 2);
@@ -212,18 +225,24 @@ internal partial class RtspClient : IDisposable
         var finalResponseStr = Encoding.ASCII.GetString(buffer, 0, bytesRead);
         return ParseResponse(finalResponseStr);
     }
-    
+
     private static bool TryGetContentLength(string response, out int length)
     {
         length = 0;
-        const string contentLengthHeader = "Content-Length:";
-        var startIndex = response.IndexOf(contentLengthHeader, StringComparison.OrdinalIgnoreCase);
+        const string ContentLengthHeader = "Content-Length:";
+        var startIndex = response.IndexOf(ContentLengthHeader, StringComparison.OrdinalIgnoreCase);
 
-        if (startIndex == -1) return false;
+        if (startIndex == -1)
+        {
+            return false;
+        }
 
-        startIndex += contentLengthHeader.Length;
+        startIndex += ContentLengthHeader.Length;
         var endIndex = response.IndexOf("\r\n", startIndex, StringComparison.InvariantCulture);
-        if (endIndex == -1) return false;
+        if (endIndex == -1)
+        {
+            return false;
+        }
 
         var lengthStr = response.Substring(startIndex, endIndex - startIndex).Trim();
         return int.TryParse(lengthStr, out length);
@@ -233,11 +252,13 @@ internal partial class RtspClient : IDisposable
     {
         var response = new RtspResponse();
         var lines = responseStr.Split(["\r\n"], StringSplitOptions.None);
-        
+
         var statusLine = lines[0].Split(' ');
         if (statusLine.Length >= 2)
+        {
             response.StatusCode = int.Parse(statusLine[1]);
-        
+        }
+
         for (var i = 1; i < lines.Length; i++)
         {
             if (string.IsNullOrEmpty(lines[i]))
@@ -248,7 +269,9 @@ internal partial class RtspClient : IDisposable
 
             var parts = lines[i].Split([": "], 2, StringSplitOptions.None);
             if (parts.Length == 2)
+            {
                 response.Headers[parts[0]] = parts[1];
+            }
         }
 
         return response;
@@ -256,14 +279,28 @@ internal partial class RtspClient : IDisposable
 
     private void ParseAuthHeaders(Dictionary<string, string> headers)
     {
-        if (!headers.TryGetValue("WWW-Authenticate", out var authHeader)) return;
-        if (!authHeader.Contains("Digest")) return;
+        if (!headers.TryGetValue("WWW-Authenticate", out var authHeader))
+        {
+            return;
+        }
+
+        if (!authHeader.Contains("Digest"))
+        {
+            return;
+        }
 
         var realmMatch = RealmRegex().Match(authHeader);
         var nonceMatch = NonceRegex().Match(authHeader);
 
-        if (realmMatch.Success) _digestRealm = realmMatch.Groups[1].Value;
-        if (nonceMatch.Success) _digestNonce = nonceMatch.Groups[1].Value;
+        if (realmMatch.Success)
+        {
+            _digestRealm = realmMatch.Groups[1].Value;
+        }
+
+        if (nonceMatch.Success)
+        {
+            _digestNonce = nonceMatch.Groups[1].Value;
+        }
     }
 
     private string CreateAuthHeader(string method, string uri)
@@ -285,10 +322,8 @@ internal partial class RtspClient : IDisposable
         return $"Authorization: Basic {base64Auth}";
     }
 
-    private static string CreateTransportHeader(RtpClient rtpClient, RtcpClient rtcpClient)
-    {
-        return $"Transport: RTP/AVP/UDP;unicast;client_port={rtpClient.Port}-{rtcpClient.Port}";
-    }
+    private static string CreateTransportHeader(RtpClient rtpClient, RtcpClient rtcpClient) =>
+        $"Transport: RTP/AVP/UDP;unicast;client_port={rtpClient.Port}-{rtcpClient.Port}";
 
     public void Dispose() => _rtspClient.Dispose();
 
@@ -299,7 +334,9 @@ internal partial class RtspClient : IDisposable
 
         var sb = new StringBuilder();
         foreach (var b in hashBytes)
+        {
             sb.Append(b.ToString("x2"));
+        }
 
         return sb.ToString();
     }

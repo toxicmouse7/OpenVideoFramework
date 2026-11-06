@@ -1,4 +1,4 @@
-﻿namespace OpenVideoFramework.Common;
+namespace OpenVideoFramework.Common;
 
 public enum MediaType
 {

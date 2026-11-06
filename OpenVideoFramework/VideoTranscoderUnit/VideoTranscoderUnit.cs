@@ -12,10 +12,7 @@ public sealed class VideoTranscoderUnit : IPipelineUnit<VideoFrame, VideoFrame>,
     private Decoder? _decoder;
     private Encoder? _encoder;
 
-    public VideoTranscoderUnit(VideoTranscoderUnitSettings settings)
-    {
-        _settings = settings;
-    }
+    public VideoTranscoderUnit(VideoTranscoderUnitSettings settings) => _settings = settings;
 
     public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken)
     {
@@ -35,7 +32,10 @@ public sealed class VideoTranscoderUnit : IPipelineUnit<VideoFrame, VideoFrame>,
 
         _decoder ??= new Decoder(frame, frame.Codec, frame.Width, frame.Height, _settings.SpecificDecoder);
         var decodedFrames = _decoder.Decode(frame);
-        if (decodedFrames.Length == 0) return;
+        if (decodedFrames.Length == 0)
+        {
+            return;
+        }
 
         try
         {
@@ -44,16 +44,24 @@ public sealed class VideoTranscoderUnit : IPipelineUnit<VideoFrame, VideoFrame>,
                 _encoder = CreateEncoder(frame, decodedFrames[0].PixelFormat);
                 _logger.LogInformation(
                     "Initialized encoder and decoder. Encoder: {encoderName}. Decoder: {decoderName}.",
-                    _encoder.Name, _decoder.Name);
+                    _encoder.Name,
+                    _decoder.Name);
             }
 
             foreach (var raw in decodedFrames)
-            foreach (var encoded in _encoder.Encode(raw))
-                await emit(encoded, cancellationToken);
+            {
+                foreach (var encoded in _encoder.Encode(raw))
+                {
+                    await emit(encoded, cancellationToken);
+                }
+            }
         }
         finally
         {
-            foreach (var raw in decodedFrames) raw.Dispose();
+            foreach (var raw in decodedFrames)
+            {
+                raw.Dispose();
+            }
         }
     }
 

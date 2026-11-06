@@ -10,10 +10,8 @@ namespace OpenVideoFramework.FrameFilterUnit;
 public class FrameFilterUnit<TFrameType> : IPipelineUnit<CompleteFrame, TFrameType>
     where TFrameType : CompleteFrame
 {
-    public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken)
-    {
-        return Task.CompletedTask;
-    }
+    public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken) =>
+        Task.CompletedTask;
 
     public async ValueTask ProcessAsync(
         CompleteFrame input,

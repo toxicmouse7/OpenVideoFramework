@@ -1,4 +1,4 @@
-﻿using OpenVideoFramework.RtspSource.Rtcp;
+using OpenVideoFramework.RtspSource.Rtcp;
 using OpenVideoFramework.RtspSource.Rtp;
 using OpenVideoFramework.RtspSource.SDP;
 

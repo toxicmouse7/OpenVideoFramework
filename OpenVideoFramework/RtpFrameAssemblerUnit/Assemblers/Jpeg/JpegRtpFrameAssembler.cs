@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using Microsoft.Extensions.Logging;
 using OpenVideoFramework.Common;
 using OpenVideoFramework.RtspSource.Rtp;
@@ -11,8 +11,8 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
     private readonly List<RtpJpegFragment> _jpegFragments = [];
     private uint _currentTimestamp;
     private RtpPacket _lastPacket = null!;
-    
-    private static readonly byte[][] DefaultLuminanceQuantTables =
+
+    private static readonly byte[][] _defaultLuminanceQuantTables =
     [
         [
             16, 11, 10, 16, 24, 40, 51, 61,
@@ -36,7 +36,7 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
         ]
     ];
 
-    private static readonly byte[][] DefaultChrominanceQuantTables =
+    private static readonly byte[][] _defaultChrominanceQuantTables =
     [
         [
             17, 18, 24, 47, 99, 99, 99, 99,
@@ -59,14 +59,14 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
             50, 50, 50, 50, 50, 50, 50, 50
         ]
     ];
-    
-    private static readonly byte[] HuffmanDcLuminance =
+
+    private static readonly byte[] _huffmanDcLuminance =
     [
         0x00, 0x01, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b
     ];
 
-    private static readonly byte[] HuffmanAcLuminance =
+    private static readonly byte[] _huffmanAcLuminance =
     [
         0x00, 0x02, 0x01, 0x03, 0x03, 0x02, 0x04, 0x03, 0x05, 0x05, 0x04, 0x04, 0x00, 0x00, 0x01, 0x7d,
         0x01, 0x02, 0x03, 0x00, 0x04, 0x11, 0x05, 0x12, 0x21, 0x31, 0x41, 0x06, 0x13, 0x51, 0x61, 0x07,
@@ -82,13 +82,13 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
         0xf9, 0xfa
     ];
 
-    private static readonly byte[] HuffmanDcChrominance =
+    private static readonly byte[] _huffmanDcChrominance =
     [
         0x00, 0x03, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b
     ];
 
-    private static readonly byte[] HuffmanAcChrominance =
+    private static readonly byte[] _huffmanAcChrominance =
     [
         0x00, 0x02, 0x01, 0x02, 0x04, 0x04, 0x03, 0x04, 0x07, 0x05, 0x04, 0x04, 0x00, 0x01, 0x02, 0x77,
         0x00, 0x01, 0x02, 0x03, 0x11, 0x04, 0x05, 0x21, 0x31, 0x06, 0x12, 0x41, 0x51, 0x07, 0x61, 0x71,
@@ -107,18 +107,18 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
     private class RtpJpegFragment
     {
         public byte[] Data { get; set; } = [];
-        public byte[]? QuantizationTables { get; set; }
+        public byte[]? QuantizationTables
+        {
+            get; set;
+        }
     }
 
-    public JpegRtpFrameAssembler(ILogger<JpegRtpFrameAssembler> logger)
-    {
-        _logger = logger;
-    }
+    public JpegRtpFrameAssembler(ILogger<JpegRtpFrameAssembler> logger) => _logger = logger;
 
     public override CompleteFrame? AddPacket(RtpPacket packet)
     {
         var header = RtpJpegHeader.Deserialize(packet.Content);
-        
+
         if (_jpegFragments.Count > 0 && packet.Header.Timestamp != _currentTimestamp)
         {
             _logger.LogWarning("New frame started before previous completed. Dropping incomplete frame.");
@@ -127,16 +127,18 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
 
         _currentTimestamp = packet.Header.Timestamp;
         _lastPacket = packet;
-        
+
         var expectedOffset = _jpegFragments.Sum(f => f.Data.Length);
         if (header.FragmentOffset != expectedOffset)
         {
-            _logger.LogError("Fragment offset mismatch. Expected: {Expected}, Got: {Actual}. Dropping frame.",
-                expectedOffset, header.FragmentOffset);
+            _logger.LogError(
+                "Fragment offset mismatch. Expected: {Expected}, Got: {Actual}. Dropping frame.",
+                expectedOffset,
+                header.FragmentOffset);
             DropFrame();
             return null;
         }
-        
+
         var fragment = ExtractFragmentData(packet.Content, header);
         if (fragment == null)
         {
@@ -146,7 +148,7 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
         }
 
         _jpegFragments.Add(fragment);
-        
+
         if (packet.Header.Marker)
         {
             return CreateFrame(header);
@@ -208,7 +210,9 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
     private byte[]? ExtractQuantizationTables(byte[] packetContent, int offset)
     {
         if (packetContent.Length < offset + 4)
+        {
             return null;
+        }
 
         var mbz = packetContent[offset];
         var precision = packetContent[offset + 1];
@@ -216,7 +220,9 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
 
         _logger.LogTrace(
             "Quantization table header: MBZ={mbz}, Precision={precision}, Length={length}",
-            mbz, precision, length);
+            mbz,
+            precision,
+            length);
 
         if (mbz != 0)
         {
@@ -226,8 +232,10 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
 
         if (packetContent.Length < offset + 4 + length)
         {
-            _logger.LogWarning("Quantization tables truncated. Expected: {expected}, Available: {available}.",
-                offset + 4 + length, packetContent.Length);
+            _logger.LogWarning(
+                "Quantization tables truncated. Expected: {expected}, Available: {available}.",
+                offset + 4 + length,
+                packetContent.Length);
             return null;
         }
 
@@ -258,7 +266,7 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
         // Получаем таблицы квантизации
         var (luminanceTable, chrominanceTable) = GetQuantizationTables(header);
 
-        var quantizationTables = new[] {luminanceTable, chrominanceTable}.Where(x => x.Length > 0).ToArray();
+        var quantizationTables = new[] { luminanceTable, chrominanceTable }.Where(x => x.Length > 0).ToArray();
 
         // DQT (Define Quantization Tables)
         WriteDqtSegment(ms, quantizationTables);
@@ -267,10 +275,10 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
         WriteSof0Segment(ms, header.Width * 8, header.Height * 8, header.Type, quantizationTables);
 
         // DHT (Define Huffman Tables)
-        WriteDhtSegment(ms, 0x00, HuffmanDcLuminance); // DC Luminance
-        WriteDhtSegment(ms, 0x10, HuffmanAcLuminance); // AC Luminance
-        WriteDhtSegment(ms, 0x01, HuffmanDcChrominance); // DC Chrominance
-        WriteDhtSegment(ms, 0x11, HuffmanAcChrominance); // AC Chrominance
+        WriteDhtSegment(ms, 0x00, _huffmanDcLuminance); // DC Luminance
+        WriteDhtSegment(ms, 0x10, _huffmanAcLuminance); // AC Luminance
+        WriteDhtSegment(ms, 0x01, _huffmanDcChrominance); // DC Chrominance
+        WriteDhtSegment(ms, 0x11, _huffmanAcChrominance); // AC Chrominance
 
         // SOS (Start of Scan)
         WriteSosSegment(ms);
@@ -285,8 +293,11 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
         ms.Write([0xFF, 0xD9]);
 
         var result = ms.ToArray();
-        _logger.LogTrace("Assembled JPEG frame: {Size} bytes, {Width}x{Height}",
-            result.Length, header.Width * 8, header.Height * 8);
+        _logger.LogTrace(
+            "Assembled JPEG frame: {Size} bytes, {Width}x{Height}",
+            result.Length,
+            header.Width * 8,
+            header.Height * 8);
 
         return result;
     }
@@ -302,23 +313,24 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
             switch (customTables.Length)
             {
                 case 128:
-                {
-                    luminanceTable = customTables[..64];
-                    chrominanceTable = customTables[64..128];
-                    return (luminanceTable, chrominanceTable);
-                }
+                    {
+                        luminanceTable = customTables[..64];
+                        chrominanceTable = customTables[64..128];
+                        return (luminanceTable, chrominanceTable);
+                    }
                 case 64:
-                {
-                    var table = customTables[..64];
-                    return (table, []);
-                }
+                    {
+                        var table = customTables[..64];
+                        return (table, []);
+                    }
             }
         }
 
         // In case tables were not provided, but required. This might break frame
         if (header.Quantization >= 128)
         {
-            _logger.LogWarning("Q={q} indicates explicit tables, but none found. Falling back to calculated tables.",
+            _logger.LogWarning(
+                "Q={q} indicates explicit tables, but none found. Falling back to calculated tables.",
                 header.Quantization);
         }
 
@@ -327,8 +339,8 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
             : 200.0 - 2.0 * header.Quantization;
 
 
-        luminanceTable = ScaleQuantTable(DefaultLuminanceQuantTables[0], qFactor);
-        chrominanceTable = ScaleQuantTable(DefaultChrominanceQuantTables[0], qFactor);
+        luminanceTable = ScaleQuantTable(_defaultLuminanceQuantTables[0], qFactor);
+        chrominanceTable = ScaleQuantTable(_defaultChrominanceQuantTables[0], qFactor);
 
         return (luminanceTable, chrominanceTable);
     }
@@ -410,8 +422,5 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
         ms.WriteByte(0x00); // Successive approximation
     }
 
-    private void DropFrame()
-    {
-        _jpegFragments.Clear();
-    }
+    private void DropFrame() => _jpegFragments.Clear();
 }

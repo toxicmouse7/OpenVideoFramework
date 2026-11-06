@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using FFmpeg.AutoGen.Abstractions;
 using OpenVideoFramework.Common;
 using OpenVideoFramework.VideoTranscoderUnit.Exceptions;
@@ -41,9 +41,16 @@ internal class Encoder : IDisposable
         }
 
         _swsContext = ffmpeg.sws_getContext(
-            width, height, format,
-            width, height, AVPixelFormat.AV_PIX_FMT_YUV420P,
-            ffmpeg.SWS_BILINEAR, null, null, null);
+            width,
+            height,
+            format,
+            width,
+            height,
+            AVPixelFormat.AV_PIX_FMT_YUV420P,
+            ffmpeg.SWS_BILINEAR,
+            null,
+            null,
+            null);
 
         ffmpeg.avcodec_open2(_codecContext, ffmpegCodec, null);
     }
@@ -75,10 +82,15 @@ internal class Encoder : IDisposable
         while (ffmpeg.avcodec_receive_packet(_codecContext, packet) >= 0)
         {
             var encodedFrame = Utils.AVPacketToVideoFrame(
-                packet, null, frame.ClockRate, _codec,
-                sourceFrame->width, sourceFrame->height,
-                frame.ReceivedAt, TimeSpan.FromSeconds(sourceFrame->duration / (double)frame.ClockRate));
-            
+                packet,
+                null,
+                frame.ClockRate,
+                _codec,
+                sourceFrame->width,
+                sourceFrame->height,
+                frame.ReceivedAt,
+                TimeSpan.FromSeconds(sourceFrame->duration / (double)frame.ClockRate));
+
             if (frame.Timestamp is not null)
             {
                 encodedFrame.Stamp(frame.Timestamp.Value);
@@ -110,7 +122,7 @@ internal class Encoder : IDisposable
         {
             ffmpeg.avcodec_free_context(codecContext);
         }
-        
+
         ffmpeg.sws_freeContext(_swsContext);
     }
 

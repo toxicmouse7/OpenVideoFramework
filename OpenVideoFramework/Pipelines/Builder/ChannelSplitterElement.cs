@@ -7,7 +7,8 @@ internal sealed class ChannelSplitterElement<T> : IPipelineElement, IDisposable
     public PipelineOutput<T> Continuation { get; } = new();
     public PipelineOutput<T> Branch { get; } = new();
 
-    public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken) =>
+        Task.CompletedTask;
 
     public async ValueTask ProcessAsync(T item, CancellationToken cancellationToken)
     {
@@ -17,7 +18,10 @@ internal sealed class ChannelSplitterElement<T> : IPipelineElement, IDisposable
             await Branch.EmitAsync(item, cancellationToken).ConfigureAwait(false);
             await Continuation.EmitAsync(item, cancellationToken).ConfigureAwait(false);
         }
-        finally { _gate.Release(); }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     public async Task CompleteAsync(CancellationToken cancellationToken)

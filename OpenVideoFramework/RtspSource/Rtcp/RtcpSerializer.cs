@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 
 namespace OpenVideoFramework.RtspSource.Rtcp;
 
@@ -13,7 +13,9 @@ internal static class RtcpSerializer
         {
             RtcpPacketType.SenderReport => DeserializeSenderReport(data),
             _ => throw new ArgumentOutOfRangeException(
-                nameof(packetType), packetType, $"Unsupported packet type: {packetType}")
+                nameof(packetType),
+                packetType,
+                $"Unsupported packet type: {packetType}")
         };
     }
 
@@ -29,7 +31,7 @@ internal static class RtcpSerializer
         {
             return null!;
         }
-        
+
         var ssrc = (uint)IPAddress.NetworkToHostOrder((int)BitConverter.ToUInt32(data, 4));
         var senderInfo = new SenderInfo
         {
@@ -39,7 +41,7 @@ internal static class RtcpSerializer
             SendersPacketCount = (uint)IPAddress.NetworkToHostOrder(BitConverter.ToInt32(data, 20)),
             SendersOctetCount = (uint)IPAddress.NetworkToHostOrder(BitConverter.ToInt32(data, 24))
         };
-        
+
         var reportBlocks = new ReportBlock[receptionReportCount];
 
         return new RtcpSenderReport
@@ -60,11 +62,11 @@ internal static class RtcpSerializer
         using var writer = new BinaryWriter(memoryStream);
 
         // RTCP Header
-        const byte version = 2;
-        const byte padding = 0;
+        const byte Version = 2;
+        const byte Padding = 0;
         var reportCount = (byte)report.ReportBlocks.Length;
 
-        writer.Write((byte)((version << 6) | (padding << 5) | reportCount));
+        writer.Write((byte)((Version << 6) | (Padding << 5) | reportCount));
         writer.Write((byte)RtcpPacketType.ReceiverReport);
 
         var length = (ushort)((8 + report.ReportBlocks.Length * 24) / 4 - 1);
@@ -83,7 +85,7 @@ internal static class RtcpSerializer
     {
         writer.Write(IPAddress.HostToNetworkOrder((int)block.SSRC));
         writer.Write(block.FractionLost);
-        
+
         var packetsLostNetworkOrder = IPAddress.HostToNetworkOrder(block.CumulativeNumberOfPacketsLost);
         writer.Write(BitConverter.GetBytes(packetsLostNetworkOrder)[..3]);
 

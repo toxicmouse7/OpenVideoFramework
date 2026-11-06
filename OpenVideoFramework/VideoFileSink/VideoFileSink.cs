@@ -23,18 +23,15 @@ public class VideoFileSink : IPipelineSink<VideoFrame>, IDisposable
     private bool _frameRateEstimated;
     private bool _initialized;
 
-    public VideoFileSink(VideoFileSinkSettings settings)
-    {
-        _settings = settings;
-    }
+    public VideoFileSink(VideoFileSinkSettings settings) => _settings = settings;
 
-    private unsafe TimeSpan Duration => 
+    private unsafe TimeSpan Duration =>
         TimeSpan.FromSeconds(_videoStream->duration * ffmpeg.av_q2d(_videoStream->time_base));
 
     public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken)
     {
         _logger = context.GetLogger<VideoFileSink>();
-        
+
         return Task.CompletedTask;
     }
 
@@ -51,7 +48,11 @@ public class VideoFileSink : IPipelineSink<VideoFrame>, IDisposable
                     _estimation.Start();
                 }
                 _estimationFrames++;
-                if (_estimation.Elapsed.TotalSeconds < 10) return ValueTask.CompletedTask;
+                if (_estimation.Elapsed.TotalSeconds < 10)
+                {
+                    return ValueTask.CompletedTask;
+                }
+
                 _estimation.Stop();
                 _frameRate = _estimationFrames / _estimation.Elapsed.TotalSeconds;
                 _frameRateEstimated = true;
@@ -93,7 +94,7 @@ public class VideoFileSink : IPipelineSink<VideoFrame>, IDisposable
 
         ffmpeg.av_interleaved_write_frame(_formatContext, packet);
         ffmpeg.av_packet_free(&packet);
-        
+
         _frameCount++;
     }
 
@@ -107,7 +108,8 @@ public class VideoFileSink : IPipelineSink<VideoFrame>, IDisposable
 
         var extension = Path.GetExtension(_settings.OutputPath);
         var filename = Path.ChangeExtension(
-            $"{Path.ChangeExtension(_settings.OutputPath, null)} {DateTime.Now:dd-MM-yy}", extension);
+            $"{Path.ChangeExtension(_settings.OutputPath, null)} {DateTime.Now:dd-MM-yy}",
+            extension);
 
         if (File.Exists(filename))
         {
@@ -117,7 +119,7 @@ public class VideoFileSink : IPipelineSink<VideoFrame>, IDisposable
                 directory = ".";
             }
 
-            var pattern =  $"{Path.GetFileNameWithoutExtension(filename)}*";
+            var pattern = $"{Path.GetFileNameWithoutExtension(filename)}*";
             var files = Directory.EnumerateFiles(directory, pattern);
             filename = Path.ChangeExtension($"{Path.ChangeExtension(filename, null)} ({files.Count()})", extension);
         }
@@ -152,7 +154,11 @@ public class VideoFileSink : IPipelineSink<VideoFrame>, IDisposable
 
     private unsafe void ReleaseUnmanagedResources()
     {
-        if (_formatContext == null) return;
+        if (_formatContext == null)
+        {
+            return;
+        }
+
         ffmpeg.av_write_trailer(_formatContext);
         ffmpeg.avio_closep(&_formatContext->pb);
         ffmpeg.avformat_free_context(_formatContext);

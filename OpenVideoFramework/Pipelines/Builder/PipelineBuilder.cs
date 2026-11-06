@@ -16,8 +16,11 @@ public class PipelineBuilder<TCurrentOutput>
     private readonly Func<CancellationToken, Task> _produce;
     private PipelineOutput<TCurrentOutput> _output;
 
-    internal PipelineBuilder(List<IPipelineElement> elements, PipelineOutput<TCurrentOutput> output,
-        PipelineContext context, Func<CancellationToken, Task> produce)
+    internal PipelineBuilder(
+        List<IPipelineElement> elements,
+        PipelineOutput<TCurrentOutput> output,
+        PipelineContext context,
+        Func<CancellationToken, Task> produce)
     {
         _elements = elements;
         _output = output;

@@ -7,22 +7,14 @@ internal sealed class RtcpClient : IDisposable
 {
     private readonly UdpClient _rtcpClient;
 
-    public RtcpClient()
-    {
-        _rtcpClient = new UdpClient(new IPEndPoint(IPAddress.Any, 0));
-    }
+    public RtcpClient() => _rtcpClient = new UdpClient(new IPEndPoint(IPAddress.Any, 0));
 
     public int Port => ((IPEndPoint)_rtcpClient.Client.LocalEndPoint!).Port;
 
-    public void Connect(IPEndPoint endPoint)
-    {
-        _rtcpClient.Connect(endPoint);
-    }
+    public void Connect(IPEndPoint endPoint) => _rtcpClient.Connect(endPoint);
 
-    public async Task SendReceiverReportAsync(RtcpReceiverReport receiverReport, CancellationToken token = default)
-    {
+    public async Task SendReceiverReportAsync(RtcpReceiverReport receiverReport, CancellationToken token = default) =>
         await _rtcpClient.SendAsync(RtcpSerializer.SerializeReceiverReport(receiverReport), token);
-    }
 
     public async Task<RtcpPacket> GetPacketAsync(CancellationToken token)
     {
@@ -33,8 +25,5 @@ internal sealed class RtcpClient : IDisposable
         return rtcpPacket;
     }
 
-    public void Dispose()
-    {
-        _rtcpClient.Dispose();
-    }
+    public void Dispose() => _rtcpClient.Dispose();
 }

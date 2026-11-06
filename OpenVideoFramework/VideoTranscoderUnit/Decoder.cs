@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using FFmpeg.AutoGen.Abstractions;
 using OpenVideoFramework.Common;
 using OpenVideoFramework.VideoTranscoderUnit.Exceptions;
@@ -19,7 +19,7 @@ internal class Decoder : IDisposable
         {
             throw new DecoderNotFoundException();
         }
-        
+
         _codecContext = ffmpeg.avcodec_alloc_context3(ffmpegCodec);
         if (frame.ExtraData is not null)
         {
@@ -27,7 +27,7 @@ internal class Decoder : IDisposable
             _codecContext->extradata_size = frame.ExtraData.Length;
             Marshal.Copy(frame.ExtraData, 0, (IntPtr)_codecContext->extradata, _codecContext->extradata_size);
         }
-        
+
         _codecContext->width = width;
         _codecContext->height = height;
 
@@ -47,17 +47,17 @@ internal class Decoder : IDisposable
         while (ffmpeg.avcodec_receive_frame(_codecContext, avFrame) >= 0)
         {
             frames = frames.Append(new RawFrame
-            { 
+            {
                 AVFrame = ffmpeg.av_frame_clone(avFrame),
                 ReceivedAt = frame.ReceivedAt,
                 ClockRate = frame.ClockRate,
                 Timestamp = frame.Timestamp
             });
-            
-            
+
+
             ffmpeg.av_frame_unref(avFrame);
         }
-        
+
         ffmpeg.av_frame_free(&avFrame);
         ffmpeg.av_packet_free(&packet);
 

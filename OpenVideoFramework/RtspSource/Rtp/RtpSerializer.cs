@@ -16,10 +16,8 @@ internal static class RtpSerializer
         };
     }
 
-    public static RtpPacketHeader DeserializeHeader(byte[] data, PayloadType payloadType)
-    {
-        return DeserializePacket(data, payloadType).header;
-    }
+    public static RtpPacketHeader DeserializeHeader(byte[] data, PayloadType payloadType) =>
+        DeserializePacket(data, payloadType).header;
 
     private static (RtpPacketHeader header, int payloadOffset, int payloadLength) DeserializePacket(
         byte[] data,
@@ -98,19 +96,14 @@ internal static class RtpSerializer
             ReadUInt32NetworkOrder(data, 4),
             ReadUInt32NetworkOrder(data, 8),
             csrc,
-            headerExtensionLength
-        );
+            headerExtensionLength);
 
         return (header, payloadOffset, payloadLength);
     }
 
-    private static ushort ReadUInt16NetworkOrder(byte[] data, int offset)
-    {
-        return (ushort)IPAddress.NetworkToHostOrder(BitConverter.ToInt16(data, offset));
-    }
+    private static ushort ReadUInt16NetworkOrder(byte[] data, int offset) =>
+        (ushort)IPAddress.NetworkToHostOrder(BitConverter.ToInt16(data, offset));
 
-    private static uint ReadUInt32NetworkOrder(byte[] data, int offset)
-    {
-        return (uint)IPAddress.NetworkToHostOrder(BitConverter.ToInt32(data, offset));
-    }
+    private static uint ReadUInt32NetworkOrder(byte[] data, int offset) =>
+        (uint)IPAddress.NetworkToHostOrder(BitConverter.ToInt32(data, offset));
 }

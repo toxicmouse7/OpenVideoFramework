@@ -1,4 +1,4 @@
-﻿namespace OpenVideoFramework.RtspSource.Rtcp;
+namespace OpenVideoFramework.RtspSource.Rtcp;
 
 internal enum RtcpPacketType : byte
 {

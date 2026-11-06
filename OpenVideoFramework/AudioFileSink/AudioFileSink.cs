@@ -15,15 +15,10 @@ public class AudioFileSink : IPipelineSink<AudioFrame>, IDisposable
     private unsafe AVStream* _audioStream;
     private TimeSpan _totalDuration;
 
-    public AudioFileSink(AudioFileSinkSettings settings)
-    {
-        _settings = settings;
-    }
+    public AudioFileSink(AudioFileSinkSettings settings) => _settings = settings;
 
-    public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken)
-    {
-        return Task.CompletedTask;
-    }
+    public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken) =>
+        Task.CompletedTask;
 
     public ValueTask ConsumeAsync(AudioFrame frame, CancellationToken cancellationToken)
     {
@@ -35,13 +30,19 @@ public class AudioFileSink : IPipelineSink<AudioFrame>, IDisposable
     private unsafe void ConsumeFrame(AudioFrame frame)
     {
         if (_formatContext == null || _totalDuration >= _settings.RollPeriod)
+        {
             RollFile(frame);
+        }
+
         WritePacketToContainer(frame);
     }
 
     private unsafe void WritePacketToContainer(AudioFrame frame)
     {
-        if (_formatContext == null) return;
+        if (_formatContext == null)
+        {
+            return;
+        }
 
         var packet = ffmpeg.av_packet_alloc();
         try
@@ -74,7 +75,8 @@ public class AudioFileSink : IPipelineSink<AudioFrame>, IDisposable
         var extension = Path.GetExtension(_settings.OutputPath);
         var filename =
             Path.ChangeExtension(
-                $"{Path.ChangeExtension(_settings.OutputPath, null)} {DateTime.Now:dd-MM-yy}", extension);
+                $"{Path.ChangeExtension(_settings.OutputPath, null)} {DateTime.Now:dd-MM-yy}",
+                extension);
 
         if (File.Exists(filename))
         {
@@ -130,7 +132,11 @@ public class AudioFileSink : IPipelineSink<AudioFrame>, IDisposable
 
     private unsafe void ReleaseUnmanagedResources()
     {
-        if (_formatContext == null) return;
+        if (_formatContext == null)
+        {
+            return;
+        }
+
         ffmpeg.av_write_trailer(_formatContext);
         ffmpeg.avio_closep(&_formatContext->pb);
         ffmpeg.avformat_free_context(_formatContext);

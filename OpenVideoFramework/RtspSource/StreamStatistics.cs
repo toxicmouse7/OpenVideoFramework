@@ -1,4 +1,4 @@
-﻿using OpenVideoFramework.RtspSource.Rtcp;
+using OpenVideoFramework.RtspSource.Rtcp;
 using OpenVideoFramework.RtspSource.Rtp;
 
 namespace OpenVideoFramework.RtspSource;
@@ -18,14 +18,23 @@ internal class StreamStatistics
     private DateTimeOffset _lastPacketArrivalTime;
     private uint _lastRtpTimestamp;
     private double _jitter;
-    
+
     // Sender report info
     private ulong _lastSenderReportNtpTimestamp;
     private DateTimeOffset _lastSenderReportReceivedTime;
 
-    public uint SSRC { get; }
-    public ulong TotalPacketsReceived { get; private set; }
-    public uint BaseSequenceNumber { get; }
+    public uint SSRC
+    {
+        get;
+    }
+    public ulong TotalPacketsReceived
+    {
+        get; private set;
+    }
+    public uint BaseSequenceNumber
+    {
+        get;
+    }
 
     public uint ExtendedHighestSequenceNumberReceived =>
         (_cycles << 16) + _maxSequenceNumber;
@@ -45,7 +54,7 @@ internal class StreamStatistics
         TotalPacketsReceived++;
 
         var seq = packet.Header.SequenceNumber;
-        
+
         if ((ushort)(seq - _maxSequenceNumber) < 0x8000)
         {
             if (seq > _maxSequenceNumber)
@@ -74,10 +83,10 @@ internal class StreamStatistics
         var arrivalDiff = (receivedAt - _lastPacketArrivalTime).TotalSeconds;
         var timestampDiff = (double)(packet.Header.Timestamp - _lastRtpTimestamp) / _clockRate;
 
-        var deviation  = Math.Abs(arrivalDiff - timestampDiff);
+        var deviation = Math.Abs(arrivalDiff - timestampDiff);
 
         _jitter += (deviation - _jitter) / 16.0;
-        
+
         _lastPacketArrivalTime = receivedAt;
         _lastRtpTimestamp = packet.Header.Timestamp;
     }
@@ -113,12 +122,12 @@ internal class StreamStatistics
         _receivedPrior = TotalPacketsReceived;
 
         var jitterReportValue = (uint)Math.Round(_jitter * _clockRate);
-        
+
         // Middle bytes of sender report NTP timestamp
         var ntpFraction = (uint)(_lastSenderReportNtpTimestamp & 0xFFFFFFFF);
         var ntpSeconds = (uint)(_lastSenderReportNtpTimestamp >> 32);
         var lsrTimestamp = (ntpSeconds << 16) | (ntpFraction >> 16);
-        
+
         // Delay since last sender report
         uint dlsr = 0;
         if (_lastSenderReportReceivedTime != DateTimeOffset.MinValue)
@@ -126,7 +135,7 @@ internal class StreamStatistics
             var delaySinceLastSenderReport = DateTimeOffset.Now - _lastSenderReportReceivedTime;
             dlsr = (uint)Math.Round(delaySinceLastSenderReport.TotalSeconds * 65536);
         }
-        
+
         return new ReportBlock
         {
             SSRC = SSRC,

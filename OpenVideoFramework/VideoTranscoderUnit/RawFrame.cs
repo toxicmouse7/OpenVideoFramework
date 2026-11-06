@@ -1,4 +1,4 @@
-﻿using FFmpeg.AutoGen.Abstractions;
+using FFmpeg.AutoGen.Abstractions;
 
 namespace OpenVideoFramework.VideoTranscoderUnit;
 
@@ -6,15 +6,24 @@ internal class RawFrame : IDisposable
 {
     private unsafe AVFrame* _avFrame;
 
-    public required uint ClockRate { get; init; }
-    public required DateTimeOffset ReceivedAt { get; init; }
+    public required uint ClockRate
+    {
+        get; init;
+    }
+    public required DateTimeOffset ReceivedAt
+    {
+        get; init;
+    }
     public unsafe required AVFrame* AVFrame
     {
         get => _avFrame;
         init => _avFrame = value;
     }
-    public DateTimeOffset? Timestamp { get; init; }
-    
+    public DateTimeOffset? Timestamp
+    {
+        get; init;
+    }
+
     public unsafe AVPixelFormat PixelFormat => (AVPixelFormat)_avFrame->format;
 
     public unsafe void Dispose()

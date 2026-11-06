@@ -23,7 +23,9 @@ public class Pipeline
     public async Task RunAsync(CancellationToken cancellationToken = default)
     {
         if (Interlocked.Exchange(ref _started, 1) != 0)
+        {
             throw new InvalidOperationException("A pipeline can only be run once.");
+        }
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         Exception? failure = null;
@@ -31,17 +33,29 @@ public class Pipeline
 
         async Task CancelAsync()
         {
-            try { await cts.CancelAsync().ConfigureAwait(false); }
-            catch (Exception ex) { Interlocked.CompareExchange(ref failure, ex, null); }
+            try
+            {
+                await cts.CancelAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Interlocked.CompareExchange(ref failure, ex, null);
+            }
         }
 
         async Task Supervise(Func<CancellationToken, Task> execute)
         {
-            try { await execute(cts.Token).ConfigureAwait(false); }
+            try
+            {
+                await execute(cts.Token).ConfigureAwait(false);
+            }
             catch (Exception ex)
             {
                 if (ex is not OperationCanceledException || !cts.IsCancellationRequested)
+                {
                     Interlocked.CompareExchange(ref failure, ex, null);
+                }
+
                 await CancelAsync().ConfigureAwait(false);
                 throw;
             }
@@ -56,7 +70,10 @@ public class Pipeline
             }
 
             foreach (var buffer in _elements.OfType<IBufferElement>())
+            {
                 workers.Add(Supervise(buffer.ExecuteAsync));
+            }
+
             workers.Add(Supervise(_produce));
             await Task.WhenAll(workers).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
@@ -65,8 +82,14 @@ public class Pipeline
         {
             Interlocked.CompareExchange(ref failure, ex, null);
             await CancelAsync().ConfigureAwait(false);
-            try { await Task.WhenAll(workers).ConfigureAwait(false); }
-            catch { /* All workers are observed before resources are released. */ }
+            try
+            {
+                await Task.WhenAll(workers).ConfigureAwait(false);
+            }
+            catch
+            {
+                /* All workers are observed before resources are released. */
+            }
         }
         finally
         {
@@ -79,15 +102,24 @@ public class Pipeline
                 try
                 {
                     if (resource is IAsyncDisposable asyncDisposable)
+                    {
                         await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+                    }
                     else if (resource is IDisposable disposable)
+                    {
                         disposable.Dispose();
+                    }
                 }
-                catch (Exception ex) { failure ??= ex; }
+                catch (Exception ex)
+                {
+                    failure ??= ex;
+                }
             }
         }
 
         if (failure is not null)
+        {
             ExceptionDispatchInfo.Capture(failure).Throw();
+        }
     }
 }

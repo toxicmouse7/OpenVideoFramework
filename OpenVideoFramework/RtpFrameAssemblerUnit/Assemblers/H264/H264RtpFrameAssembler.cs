@@ -9,7 +9,7 @@ public class H264RtpFrameAssembler : RtpFrameAssembler
     private const byte NalTypeMask = 0x1F;
     private const byte FuStartBit = 0x80;
     private const byte FuEndBit = 0x40;
-    private static readonly byte[] StartCode = [0x00, 0x00, 0x00, 0x01];
+    private static readonly byte[] _startCode = [0x00, 0x00, 0x00, 0x01];
 
     private readonly ILogger<H264RtpFrameAssembler> _logger;
     private readonly List<byte[]> _nalUnits = [];
@@ -24,10 +24,7 @@ public class H264RtpFrameAssembler : RtpFrameAssembler
     private int _width;
     private int _height;
 
-    public H264RtpFrameAssembler(ILogger<H264RtpFrameAssembler> logger)
-    {
-        _logger = logger;
-    }
+    public H264RtpFrameAssembler(ILogger<H264RtpFrameAssembler> logger) => _logger = logger;
 
     public override CompleteFrame? AddPacket(RtpPacket packet)
     {
@@ -154,7 +151,7 @@ public class H264RtpFrameAssembler : RtpFrameAssembler
 
     private void AppendNalUnit(byte[] nalUnit)
     {
-        _nalUnits.Add([.. StartCode, .. nalUnit]);
+        _nalUnits.Add([.. _startCode, .. nalUnit]);
 
         switch (nalUnit[0] & NalTypeMask)
         {
@@ -204,12 +201,12 @@ public class H264RtpFrameAssembler : RtpFrameAssembler
         {
             if (!_frameContainsSps && _lastSps is not null)
             {
-                nalUnits.Add([.. StartCode, .. _lastSps]);
+                nalUnits.Add([.. _startCode, .. _lastSps]);
             }
 
             if (!_frameContainsPps && _lastPps is not null)
             {
-                nalUnits.Add([.. StartCode, .. _lastPps]);
+                nalUnits.Add([.. _startCode, .. _lastPps]);
             }
         }
 
@@ -395,15 +392,9 @@ public class H264RtpFrameAssembler : RtpFrameAssembler
         private readonly byte[] _data;
         private int _bitPosition;
 
-        public H264BitReader(byte[] data)
-        {
-            _data = data;
-        }
+        public H264BitReader(byte[] data) => _data = data;
 
-        public bool ReadBit()
-        {
-            return ReadBits(1) != 0;
-        }
+        public bool ReadBit() => ReadBits(1) != 0;
 
         public int ReadBits(int bitCount)
         {

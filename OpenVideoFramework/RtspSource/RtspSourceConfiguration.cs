@@ -1,4 +1,4 @@
-﻿using OpenVideoFramework.Common;
+using OpenVideoFramework.Common;
 
 namespace OpenVideoFramework.RtspSource;
 

@@ -1,12 +1,21 @@
-﻿namespace OpenVideoFramework.RtpFrameAssemblerUnit.Assemblers.AC3;
+namespace OpenVideoFramework.RtpFrameAssemblerUnit.Assemblers.AC3;
 
 public class RtpAc3Header
 {
     public const int Size = 2;
-    
-    public byte MustBeZero { get; init; }
-    public FrameType FrameType { get; init; }
-    public byte NumberOfFrames { get; init; }
+
+    public byte MustBeZero
+    {
+        get; init;
+    }
+    public FrameType FrameType
+    {
+        get; init;
+    }
+    public byte NumberOfFrames
+    {
+        get; init;
+    }
 
     public static RtpAc3Header Deserialize(byte[] data)
     {

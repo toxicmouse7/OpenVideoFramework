@@ -1,4 +1,4 @@
-﻿namespace OpenVideoFramework.HttpStreamSink;
+namespace OpenVideoFramework.HttpStreamSink;
 
 public class HttpStreamSinkSettings
 {

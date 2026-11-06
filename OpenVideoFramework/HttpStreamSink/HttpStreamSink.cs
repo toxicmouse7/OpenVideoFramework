@@ -61,7 +61,7 @@ public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable, IAsyncDisp
         _cancellationToken = cancellationToken;
         await _host.StartAsync(cancellationToken);
         _hostStarted = true;
-        
+
         _logger.LogInformation("HTTP stream prepared.");
     }
 
@@ -69,18 +69,29 @@ public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable, IAsyncDisp
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (frame.Codec != Codec.MJPEG)
+        {
             throw new ArgumentException($"Only JPEG streams are supported. Received codec: {frame.Codec}");
+        }
 
-        if (!_stopwatch.IsRunning) _stopwatch.Start();
+        if (!_stopwatch.IsRunning)
+        {
+            _stopwatch.Start();
+        }
+
         lock (_channelsLock)
         {
             foreach (var channel in _channels)
+            {
                 channel.Writer.TryWrite(frame);
+            }
         }
 
         var remaining = frame.Duration - _stopwatch.Elapsed;
         if (remaining > TimeSpan.Zero)
+        {
             await Task.Delay(remaining, cancellationToken);
+        }
+
         _stopwatch.Restart();
     }
 
@@ -89,7 +100,10 @@ public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable, IAsyncDisp
         lock (_channelsLock)
         {
             _stopped = true;
-            foreach (var channel in _channels) channel.Writer.TryComplete();
+            foreach (var channel in _channels)
+            {
+                channel.Writer.TryComplete();
+            }
         }
         await _shutdown.CancelAsync();
         if (_hostStarted)
@@ -109,7 +123,9 @@ public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable, IAsyncDisp
             FullMode = BoundedChannelFullMode.DropOldest
         });
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(
-            _cancellationToken, _shutdown.Token, context.RequestAborted);
+            _cancellationToken,
+            _shutdown.Token,
+            context.RequestAborted);
 
         lock (_channelsLock)
         {
@@ -127,7 +143,9 @@ public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable, IAsyncDisp
             context.Response.Headers.Append("Cache-Control", "no-cache");
             context.Response.Headers.Append("Connection", "keep-alive");
             await foreach (var frame in channel.Reader.ReadAllAsync(cts.Token))
+            {
                 await WriteMjpegFrame(context.Response, frame, cts.Token);
+            }
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
@@ -172,14 +190,28 @@ public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable, IAsyncDisp
 
     public async ValueTask DisposeAsync()
     {
-        if (_disposed) return;
-        try { await CompleteAsync(CancellationToken.None); }
-        finally { Dispose(); }
+        if (_disposed)
+        {
+            return;
+        }
+
+        try
+        {
+            await CompleteAsync(CancellationToken.None);
+        }
+        finally
+        {
+            Dispose();
+        }
     }
 
     public void Dispose()
     {
-        if (_disposed) return;
+        if (_disposed)
+        {
+            return;
+        }
+
         _disposed = true;
         _shutdown.Cancel();
         _host.Dispose();

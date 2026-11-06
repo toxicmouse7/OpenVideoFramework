@@ -1,4 +1,4 @@
-﻿using RtpPacket = OpenVideoFramework.RtspSource.Rtp.RtpPacket;
+using RtpPacket = OpenVideoFramework.RtspSource.Rtp.RtpPacket;
 
 namespace OpenVideoFramework.RtspSource.Rtcp;
 
@@ -12,7 +12,8 @@ internal class RtcpStatisticsService
     {
         if (!_streamStatistics.TryGetValue(rtpPacket.Header.SSRC, out var streamStatistics))
         {
-            streamStatistics = new StreamStatistics(rtpPacket.Header.SSRC,
+            streamStatistics = new StreamStatistics(
+                rtpPacket.Header.SSRC,
                 rtpPacket.Header.SequenceNumber,
                 clockRate);
             _streamStatistics[rtpPacket.Header.SSRC] = streamStatistics;

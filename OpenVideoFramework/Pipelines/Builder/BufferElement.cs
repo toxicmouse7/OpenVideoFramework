@@ -30,14 +30,19 @@ internal sealed class BufferElement<T> : IBufferElement, IDisposable
         });
     }
 
-    public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken) => Task.CompletedTask;
-    public ValueTask ProcessAsync(T item, CancellationToken cancellationToken) => _channel.Writer.WriteAsync(item, cancellationToken);
+    public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken) =>
+        Task.CompletedTask;
+    public ValueTask ProcessAsync(T item, CancellationToken cancellationToken) =>
+        _channel.Writer.WriteAsync(item, cancellationToken);
     public Task ExecuteAsync(CancellationToken cancellationToken) => _worker = DrainAsync(cancellationToken);
 
     private async Task DrainAsync(CancellationToken cancellationToken)
     {
         await foreach (var item in _channel.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+        {
             await Output.EmitAsync(item, cancellationToken).ConfigureAwait(false);
+        }
+
         await Output.CompleteAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -53,6 +58,8 @@ internal sealed class BufferElement<T> : IBufferElement, IDisposable
     {
         _channel.Writer.TryComplete();
         // Workers have stopped. Release queued references without disposing items shared with branches.
-        while (_channel.Reader.TryRead(out _)) { }
+        while (_channel.Reader.TryRead(out _))
+        {
+        }
     }
 }

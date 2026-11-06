@@ -15,7 +15,10 @@ internal sealed class UnitElement<TInput, TOutput>(IPipelineUnit<TInput, TOutput
         {
             await unit.ProcessAsync(input, Output.EmitAsync, cancellationToken).ConfigureAwait(false);
         }
-        finally { _gate.Release(); }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     public async Task CompleteAsync(CancellationToken cancellationToken)
@@ -26,7 +29,10 @@ internal sealed class UnitElement<TInput, TOutput>(IPipelineUnit<TInput, TOutput
             await unit.CompleteAsync(Output.EmitAsync, cancellationToken).ConfigureAwait(false);
             await Output.CompleteAsync(cancellationToken).ConfigureAwait(false);
         }
-        finally { _gate.Release(); }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     public object GetUnderlyingElement() => unit;
