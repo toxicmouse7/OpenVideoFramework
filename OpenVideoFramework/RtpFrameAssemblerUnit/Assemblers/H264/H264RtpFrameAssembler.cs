@@ -211,7 +211,7 @@ public class H264RtpFrameAssembler : RtpFrameAssembler
         }
 
         nalUnits.AddRange(_nalUnits);
-        return nalUnits.SelectMany(static x => x).ToArray();
+        return [.. nalUnits.SelectMany(static x => x)];
     }
 
     private void TryUpdateDimensions(byte[] spsNalUnit)
@@ -384,7 +384,7 @@ public class H264RtpFrameAssembler : RtpFrameAssembler
             result.Add(data[i]);
         }
 
-        return result.ToArray();
+        return [.. result];
     }
 
     private sealed class H264BitReader

@@ -103,7 +103,7 @@ public class Aс3RtpFrameAssembler : RtpFrameAssembler
         return audioFrame;
     }
 
-    private byte[] GetAssembledData() => _fragments.SelectMany(f => f.Data).ToArray();
+    private byte[] GetAssembledData() => [.. _fragments.SelectMany(f => f.Data)];
 
     private bool IsValidAC3Frame(byte[] data)
     {
