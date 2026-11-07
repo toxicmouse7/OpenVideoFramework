@@ -5,135 +5,202 @@ using OpenVideoFramework.VideoTranscoderUnit.Exceptions;
 
 namespace OpenVideoFramework.VideoTranscoderUnit;
 
-internal class Encoder : IDisposable
+internal sealed unsafe class Encoder : IDisposable
 {
     private readonly Codec _codec;
-    private readonly unsafe AVCodecContext* _codecContext;
-    private readonly unsafe SwsContext* _swsContext;
+    private AVCodecContext* _context;
+    private SwsContext* _swsContext;
+    private FFmpegBitstreamFilter? _filter;
     private long _frameCounter;
 
-    public unsafe Encoder(
-        Codec codec,
-        int width,
-        int height,
-        AVPixelFormat format,
-        string? specificEncoder)
+    internal Encoder(VideoTranscoderUnitSettings settings, RawFrame firstFrame)
     {
-        _codec = codec;
-        var ffmpegCodec = specificEncoder is null
-            ? ffmpeg.avcodec_find_encoder(MapCodec(codec))
-            : ffmpeg.avcodec_find_encoder_by_name(specificEncoder);
-
-        if ((IntPtr)ffmpegCodec == IntPtr.Zero)
+        _codec = settings.OutputCodec;
+        var codec = settings.SpecificEncoder is null
+            ? ffmpeg.avcodec_find_encoder(FFmpegPacketAdapter.MapCodec(_codec))
+            : ffmpeg.avcodec_find_encoder_by_name(settings.SpecificEncoder);
+        if (codec == null)
         {
             throw new EncoderNotFoundException();
         }
 
-        _codecContext = ffmpeg.avcodec_alloc_context3(ffmpegCodec);
-
-        _codecContext->width = width;
-        _codecContext->height = height;
-        _codecContext->time_base = ffmpeg.av_make_q(1, 1);
-        _codecContext->pix_fmt = AVPixelFormat.AV_PIX_FMT_YUV420P;
-        if (codec == Codec.MJPEG)
+        if (codec->id != FFmpegPacketAdapter.MapCodec(_codec))
         {
-            _codecContext->color_range = AVColorRange.AVCOL_RANGE_JPEG;
+            throw new ArgumentException("The selected encoder does not support the output codec.");
         }
 
-        _swsContext = ffmpeg.sws_getContext(
-            width,
-            height,
-            format,
-            width,
-            height,
-            AVPixelFormat.AV_PIX_FMT_YUV420P,
-            ffmpeg.SWS_BILINEAR,
-            null,
-            null,
-            null);
-
-        ffmpeg.avcodec_open2(_codecContext, ffmpegCodec, null);
-    }
-
-    public unsafe string? Name => Marshal.PtrToStringAnsi((IntPtr)_codecContext->codec->long_name);
-
-    public unsafe VideoFrame[] Encode(RawFrame frame)
-    {
-        var frames = Enumerable.Empty<VideoFrame>();
-        var avFrame = frame.AVFrame;
-        avFrame->pts = _frameCounter++;
-
-        var sourceFrame = avFrame;
-
-        if (avFrame->format != (int)AVPixelFormat.AV_PIX_FMT_YUV420P)
+        try
         {
-            var convertedFrame = ffmpeg.av_frame_alloc();
-            ffmpeg.sws_scale_frame(_swsContext, convertedFrame, avFrame);
-            convertedFrame->duration = avFrame->duration;
-
-            ffmpeg.av_frame_unref(avFrame);
-            sourceFrame = convertedFrame;
-        }
-
-        ffmpeg.avcodec_send_frame(_codecContext, sourceFrame);
-
-        var packet = ffmpeg.av_packet_alloc();
-
-        while (ffmpeg.avcodec_receive_packet(_codecContext, packet) >= 0)
-        {
-            var encodedFrame = Utils.AVPacketToVideoFrame(
-                packet,
-                null,
-                frame.ClockRate,
-                _codec,
-                sourceFrame->width,
-                sourceFrame->height,
-                frame.ReceivedAt,
-                TimeSpan.FromSeconds(sourceFrame->duration / (double)frame.ClockRate));
-
-            if (frame.Timestamp is not null)
+            _context = ffmpeg.avcodec_alloc_context3(codec);
+            if (_context == null)
             {
-                encodedFrame.Stamp(frame.Timestamp.Value);
+                throw new OutOfMemoryException();
             }
 
-            frames = frames.Append(encodedFrame);
+            _context->width = firstFrame.AVFrame->width;
+            _context->height = firstFrame.AVFrame->height;
+            _context->framerate = ffmpeg.av_d2q(settings.Fps, 1000000);
+            _context->time_base = ffmpeg.av_inv_q(_context->framerate);
+            if (_context->time_base.num <= 0 || _context->time_base.den <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(settings.Fps));
+            }
 
-            ffmpeg.av_frame_unref(sourceFrame);
+            _context->pix_fmt = AVPixelFormat.AV_PIX_FMT_YUV420P;
+            _context->max_b_frames = 0;
+            _context->gop_size = 60;
+            if (_codec == Codec.MJPEG)
+            {
+                _context->color_range = AVColorRange.AVCOL_RANGE_JPEG;
+            }
+            // No global-header flag: parameter sets must remain in-band at H.264 keyframes.
+            FFmpegPacketAdapter.Check(ffmpeg.avcodec_open2(_context, codec, null));
+            if (_context->has_b_frames != 0)
+            {
+                throw new NotSupportedException("The selected encoder must support encoding without B frames.");
+            }
+
+            if (_codec == Codec.H264)
+            {
+                var parameters = ffmpeg.avcodec_parameters_alloc();
+                if (parameters == null)
+                {
+                    throw new OutOfMemoryException();
+                }
+
+                try
+                {
+                    FFmpegPacketAdapter.Check(ffmpeg.avcodec_parameters_from_context(parameters, _context));
+                    _filter = new FFmpegBitstreamFilter("h264_mp4toannexb", parameters, _context->time_base);
+                }
+                finally { ffmpeg.avcodec_parameters_free(&parameters); }
+            }
+        }
+        catch { Dispose(); throw; }
+    }
+
+    internal string? Name => Marshal.PtrToStringAnsi((IntPtr)_context->codec->long_name);
+
+    internal List<EncodedVideoFrame> Encode(RawFrame? raw)
+    {
+        AVFrame* converted = null;
+        var frames = new List<EncodedVideoFrame>();
+        try
+        {
+            var source = raw is null ? null : raw.AVFrame;
+            if (source != null)
+            {
+                if (source->width != _context->width || source->height != _context->height || source->format != (int)_context->pix_fmt)
+                {
+                    _swsContext = ffmpeg.sws_getCachedContext(_swsContext, source->width, source->height,
+                        (AVPixelFormat)source->format, _context->width, _context->height, _context->pix_fmt,
+                        ffmpeg.SWS_BILINEAR, null, null, null);
+                    if (_swsContext == null)
+                    {
+                        throw new SwsContextUnavailableException();
+                    }
+
+                    converted = ffmpeg.av_frame_alloc();
+                    if (converted == null)
+                    {
+                        throw new OutOfMemoryException();
+                    }
+
+                    converted->width = _context->width;
+                    converted->height = _context->height;
+                    converted->format = (int)_context->pix_fmt;
+                    FFmpegPacketAdapter.Check(ffmpeg.av_frame_get_buffer(converted, 0));
+                    FFmpegPacketAdapter.Check(ffmpeg.sws_scale(_swsContext, source->data, source->linesize,
+                        0, source->height, converted->data, converted->linesize));
+                    source = converted;
+                }
+                source->pts = _frameCounter++;
+                source->pict_type = AVPictureType.AV_PICTURE_TYPE_NONE;
+                source->duration = 1;
+            }
+            var result = ffmpeg.avcodec_send_frame(_context, source);
+            if (result == ffmpeg.AVERROR(ffmpeg.EAGAIN))
+            {
+                Receive(frames);
+                result = ffmpeg.avcodec_send_frame(_context, source);
+            }
+            FFmpegPacketAdapter.Check(result);
+            Receive(frames);
+            if (raw is null && _filter is not null)
+            {
+                _filter.Send(null);
+                ReceiveFiltered(frames);
+            }
+            return frames;
+        }
+        finally { ffmpeg.av_frame_free(&converted); }
+    }
+
+    private void Receive(List<EncodedVideoFrame> frames)
+    {
+        var packet = ffmpeg.av_packet_alloc();
+        if (packet == null)
+        {
+            throw new OutOfMemoryException();
         }
 
-        ffmpeg.av_packet_free(&packet);
+        try
+        {
+            while (true)
+            {
+                var result = ffmpeg.avcodec_receive_packet(_context, packet);
+                if (result == ffmpeg.AVERROR(ffmpeg.EAGAIN) || result == ffmpeg.AVERROR_EOF)
+                {
+                    break;
+                }
 
-        return frames.ToArray();
+                FFmpegPacketAdapter.Check(result);
+                if (_filter is null)
+                {
+                    frames.Add(Convert(packet));
+                }
+                else
+                {
+                    _filter.Send(packet);
+                    ReceiveFiltered(frames);
+                }
+                ffmpeg.av_packet_unref(packet);
+            }
+        }
+        finally { ffmpeg.av_packet_free(&packet); }
     }
 
-    private static AVCodecID MapCodec(Codec codec)
+    private void ReceiveFiltered(List<EncodedVideoFrame> frames)
     {
-        return codec switch
+        var packet = ffmpeg.av_packet_alloc();
+        if (packet == null)
         {
-            Codec.MJPEG => AVCodecID.AV_CODEC_ID_MJPEG,
-            Codec.H264 => AVCodecID.AV_CODEC_ID_H264,
-            _ => throw new ArgumentOutOfRangeException(nameof(codec), codec, "Unsupported codec.")
-        };
-    }
-
-    private unsafe void ReleaseUnmanagedResources()
-    {
-        fixed (AVCodecContext** codecContext = &_codecContext)
-        {
-            ffmpeg.avcodec_free_context(codecContext);
+            throw new OutOfMemoryException();
         }
 
-        ffmpeg.sws_freeContext(_swsContext);
+        try
+        {
+            while (_filter!.Receive(packet))
+            {
+                frames.Add(Convert(packet));
+                ffmpeg.av_packet_unref(packet);
+            }
+        }
+        finally { ffmpeg.av_packet_free(&packet); }
     }
+
+    private EncodedVideoFrame Convert(AVPacket* packet) =>
+        FFmpegPacketAdapter.FromPacket(packet, _codec, _context->width, _context->height);
 
     public void Dispose()
     {
-        ReleaseUnmanagedResources();
-        GC.SuppressFinalize(this);
-    }
+        _filter?.Dispose();
+        fixed (AVCodecContext** context = &_context)
+        {
+            ffmpeg.avcodec_free_context(context);
+        }
 
-    ~Encoder()
-    {
-        ReleaseUnmanagedResources();
+        ffmpeg.sws_freeContext(_swsContext);
+        _swsContext = null;
     }
 }

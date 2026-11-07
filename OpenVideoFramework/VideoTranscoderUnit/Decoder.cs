@@ -5,96 +5,107 @@ using OpenVideoFramework.VideoTranscoderUnit.Exceptions;
 
 namespace OpenVideoFramework.VideoTranscoderUnit;
 
-internal class Decoder : IDisposable
+internal sealed unsafe class Decoder : IDisposable
 {
-    private readonly unsafe AVCodecContext* _codecContext;
+    private AVCodecContext* _context;
 
-    public unsafe Decoder(VideoFrame frame, Codec codec, int width, int height, string? specificDecoder)
+    internal Decoder(EncodedVideoFrame frame, string? specificDecoder)
     {
-        var ffmpegCodec = specificDecoder is null
-            ? ffmpeg.avcodec_find_decoder(MapCodec(codec))
+        var codec = specificDecoder is null
+            ? ffmpeg.avcodec_find_decoder(FFmpegPacketAdapter.MapCodec(frame.Codec))
             : ffmpeg.avcodec_find_decoder_by_name(specificDecoder);
-
-        if ((IntPtr)ffmpegCodec == IntPtr.Zero)
+        if (codec == null)
         {
             throw new DecoderNotFoundException();
         }
 
-        _codecContext = ffmpeg.avcodec_alloc_context3(ffmpegCodec);
-        if (frame.ExtraData is not null)
+        if (codec->id != FFmpegPacketAdapter.MapCodec(frame.Codec))
         {
-            _codecContext->extradata = (byte*)ffmpeg.av_malloc((uint)frame.ExtraData.Length);
-            _codecContext->extradata_size = frame.ExtraData.Length;
-            Marshal.Copy(frame.ExtraData, 0, (IntPtr)_codecContext->extradata, _codecContext->extradata_size);
+            throw new ArgumentException("The selected decoder does not support the input codec.");
         }
 
-        _codecContext->width = width;
-        _codecContext->height = height;
-
-        ffmpeg.avcodec_open2(_codecContext, ffmpegCodec, null);
-    }
-
-    public unsafe string? Name => Marshal.PtrToStringAnsi((IntPtr)_codecContext->codec->long_name);
-
-    public unsafe RawFrame[] Decode(VideoFrame frame)
-    {
-        var packet = VideoFrameToAVPacket(frame);
-        var frames = Enumerable.Empty<RawFrame>();
-        var errorCode = ffmpeg.avcodec_send_packet(_codecContext, packet);
-
-        var avFrame = ffmpeg.av_frame_alloc();
-
-        while (ffmpeg.avcodec_receive_frame(_codecContext, avFrame) >= 0)
+        try
         {
-            frames = frames.Append(new RawFrame
+            _context = ffmpeg.avcodec_alloc_context3(codec);
+            if (_context == null)
             {
-                AVFrame = ffmpeg.av_frame_clone(avFrame),
-                ReceivedAt = frame.ReceivedAt,
-                ClockRate = frame.ClockRate,
-                Timestamp = frame.Timestamp
-            });
+                throw new OutOfMemoryException();
+            }
 
+            _context->width = frame.Width;
+            _context->height = frame.Height;
+            FFmpegPacketAdapter.Check(ffmpeg.avcodec_open2(_context, codec, null));
+        }
+        catch { Dispose(); throw; }
+    }
 
-            ffmpeg.av_frame_unref(avFrame);
+    internal string? Name => Marshal.PtrToStringAnsi((IntPtr)_context->codec->long_name);
+
+    internal List<RawFrame> Decode(EncodedVideoFrame? frame)
+    {
+        var packet = frame is null ? null : FFmpegPacketAdapter.ToPacket(frame);
+        var frames = new List<RawFrame>();
+        try
+        {
+            var result = ffmpeg.avcodec_send_packet(_context, packet);
+            if (result == ffmpeg.AVERROR(ffmpeg.EAGAIN))
+            {
+                Receive(frames);
+                result = ffmpeg.avcodec_send_packet(_context, packet);
+            }
+            FFmpegPacketAdapter.Check(result);
+            Receive(frames);
+            return frames;
+        }
+        catch
+        {
+            foreach (var raw in frames)
+            {
+                raw.Dispose();
+            }
+
+            throw;
+        }
+        finally { ffmpeg.av_packet_free(&packet); }
+    }
+
+    private void Receive(List<RawFrame> frames)
+    {
+        var frame = ffmpeg.av_frame_alloc();
+        if (frame == null)
+        {
+            throw new OutOfMemoryException();
         }
 
-        ffmpeg.av_frame_free(&avFrame);
-        ffmpeg.av_packet_free(&packet);
-
-        return frames.ToArray();
-    }
-
-    private static unsafe AVPacket* VideoFrameToAVPacket(VideoFrame frame)
-    {
-        var packet = ffmpeg.av_packet_alloc();
-        ffmpeg.av_new_packet(packet, frame.Data.Length);
-
-        Marshal.Copy(frame.Data, 0, (IntPtr)packet->data, frame.Data.Length);
-        if (frame.IsKeyFrame)
+        try
         {
-            packet->flags |= ffmpeg.AV_PKT_FLAG_KEY;
+            while (true)
+            {
+                var result = ffmpeg.avcodec_receive_frame(_context, frame);
+                if (result == ffmpeg.AVERROR(ffmpeg.EAGAIN) || result == ffmpeg.AVERROR_EOF)
+                {
+                    break;
+                }
+
+                FFmpegPacketAdapter.Check(result);
+                var clone = ffmpeg.av_frame_clone(frame);
+                if (clone == null)
+                {
+                    throw new OutOfMemoryException();
+                }
+
+                frames.Add(new RawFrame(clone));
+                ffmpeg.av_frame_unref(frame);
+            }
         }
-
-        packet->duration = (int)(frame.Duration.TotalSeconds * frame.ClockRate);
-
-        return packet;
+        finally { ffmpeg.av_frame_free(&frame); }
     }
 
-    private static AVCodecID MapCodec(Codec codec)
+    public void Dispose()
     {
-        return codec switch
+        fixed (AVCodecContext** context = &_context)
         {
-            Codec.MJPEG => AVCodecID.AV_CODEC_ID_MJPEG,
-            Codec.H264 => AVCodecID.AV_CODEC_ID_H264,
-            _ => throw new ArgumentOutOfRangeException(nameof(codec), codec, "Unsupported codec.")
-        };
-    }
-
-    public unsafe void Dispose()
-    {
-        fixed (AVCodecContext** codecContext = &_codecContext)
-        {
-            ffmpeg.avcodec_free_context(codecContext);
+            ffmpeg.avcodec_free_context(context);
         }
     }
 }

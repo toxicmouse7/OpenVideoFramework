@@ -23,8 +23,7 @@ internal sealed class RtpClient : IDisposable
 
         var rtpPacket = RtpSerializer.DeserializeRtpPacket(
             udpPacket.Buffer,
-            _trackMetadata.PayloadType,
-            _trackMetadata.ClockRate);
+            _trackMetadata.PayloadType);
 
         return rtpPacket;
     }

@@ -92,7 +92,6 @@ public class Aс3RtpFrameAssembler : RtpFrameAssembler
             IsKeyFrame = true,
             Codec = Codec.AC3,
             Duration = TimeSpan.FromSeconds(SamplesPerFrame / (double)frameInfo.SampleRate),
-            ClockRate = _lastPacket.ClockRate,
             SampleRate = frameInfo.SampleRate,
             Channels = frameInfo.Channels,
             Bitrate = frameInfo.Bitrate,

@@ -1,83 +1,91 @@
-using FFmpeg.AutoGen.Abstractions;
 using Microsoft.Extensions.Logging;
 using OpenVideoFramework.Common;
 using OpenVideoFramework.Pipelines;
 
 namespace OpenVideoFramework.VideoTranscoderUnit;
 
-public sealed class VideoTranscoderUnit : IPipelineUnit<VideoFrame, VideoFrame>, IDisposable
+public sealed class VideoTranscoderUnit : IPipelineUnit<EncodedVideoFrame, EncodedVideoFrame>, IDisposable
 {
     private readonly VideoTranscoderUnitSettings _settings;
     private ILogger<VideoTranscoderUnit> _logger = null!;
     private Decoder? _decoder;
     private Encoder? _encoder;
 
-    public VideoTranscoderUnit(VideoTranscoderUnitSettings settings) => _settings = settings;
+    public VideoTranscoderUnit(VideoTranscoderUnitSettings settings)
+    {
+        if (!double.IsFinite(settings.Fps) || settings.Fps <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(settings.Fps));
+        }
+
+        _settings = settings;
+    }
 
     public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken)
     {
         _logger = context.GetLogger<VideoTranscoderUnit>();
-
         return Task.CompletedTask;
     }
 
-    public async ValueTask ProcessAsync(VideoFrame frame, Emit<VideoFrame> emit, CancellationToken cancellationToken)
+    public async ValueTask ProcessAsync(EncodedVideoFrame frame, Emit<EncodedVideoFrame> emit, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (frame.Codec == _settings.OutputCodec)
-        {
-            await emit(frame, cancellationToken);
-            return;
-        }
+        _decoder ??= new Decoder(frame, _settings.SpecificDecoder);
+        await EncodeFrames(_decoder.Decode(frame), emit, cancellationToken);
+    }
 
-        _decoder ??= new Decoder(frame, frame.Codec, frame.Width, frame.Height, _settings.SpecificDecoder);
-        var decodedFrames = _decoder.Decode(frame);
-        if (decodedFrames.Length == 0)
-        {
-            return;
-        }
-
+    private async ValueTask EncodeFrames(List<RawFrame> frames, Emit<EncodedVideoFrame> emit, CancellationToken token)
+    {
         try
         {
-            if (_encoder is null)
+            foreach (var raw in frames)
             {
-                _encoder = CreateEncoder(frame, decodedFrames[0].PixelFormat);
-                _logger.LogInformation(
-                    "Initialized encoder and decoder. Encoder: {encoderName}. Decoder: {decoderName}.",
-                    _encoder.Name,
-                    _decoder.Name);
-            }
-
-            foreach (var raw in decodedFrames)
-            {
+                if (_encoder is null)
+                {
+                    _encoder = new Encoder(_settings, raw);
+                    _logger.LogInformation("Initialized encoder {encoder} and decoder {decoder}.", _encoder.Name, _decoder!.Name);
+                }
                 foreach (var encoded in _encoder.Encode(raw))
                 {
-                    await emit(encoded, cancellationToken);
+                    await emit(encoded, token);
                 }
             }
         }
         finally
         {
-            foreach (var raw in decodedFrames)
+            foreach (var raw in frames)
             {
                 raw.Dispose();
             }
         }
     }
 
-    private Encoder CreateEncoder(VideoFrame initFrame, AVPixelFormat pixelFormat)
+    public async ValueTask CompleteAsync(Emit<EncodedVideoFrame> emit, CancellationToken cancellationToken)
     {
-        return new Encoder(
-            _settings.OutputCodec,
-            initFrame.Width,
-            initFrame.Height,
-            pixelFormat,
-            _settings.SpecificEncoder);
+        if (_decoder is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await EncodeFrames(_decoder.Decode(null), emit, cancellationToken);
+            if (_encoder is not null)
+            {
+                foreach (var frame in _encoder.Encode(null))
+                {
+                    await emit(frame, cancellationToken);
+                }
+            }
+        }
+        finally { Dispose(); }
     }
 
     public void Dispose()
     {
         _decoder?.Dispose();
         _encoder?.Dispose();
+        _decoder = null;
+        _encoder = null;
     }
 }

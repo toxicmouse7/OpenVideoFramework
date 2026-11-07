@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text;
 using System.Threading.Channels;
 using Microsoft.AspNetCore;
@@ -15,13 +14,12 @@ namespace OpenVideoFramework.HttpStreamSink;
 /// Streams video frames as MJPEG over HTTP for real-time web viewing.
 /// Creates a web server that serves a live video stream accessible via web browsers.
 /// </summary>
-public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable, IAsyncDisposable
+public class HttpStreamSink : IPipelineSink<EncodedVideoFrame>, IDisposable, IAsyncDisposable
 {
     private readonly IWebHost _host;
-    private readonly List<Channel<VideoFrame>> _channels;
+    private readonly List<Channel<EncodedVideoFrame>> _channels;
     private readonly object _channelsLock = new();
     private readonly CancellationTokenSource _shutdown = new();
-    private readonly Stopwatch _stopwatch = new();
     private bool _stopped;
     private bool _hostStarted;
     private bool _disposed;
@@ -65,17 +63,12 @@ public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable, IAsyncDisp
         _logger.LogInformation("HTTP stream prepared.");
     }
 
-    public async ValueTask ConsumeAsync(VideoFrame frame, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(EncodedVideoFrame frame, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (frame.Codec != Codec.MJPEG)
         {
             throw new ArgumentException($"Only JPEG streams are supported. Received codec: {frame.Codec}");
-        }
-
-        if (!_stopwatch.IsRunning)
-        {
-            _stopwatch.Start();
         }
 
         lock (_channelsLock)
@@ -86,13 +79,7 @@ public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable, IAsyncDisp
             }
         }
 
-        var remaining = frame.Duration - _stopwatch.Elapsed;
-        if (remaining > TimeSpan.Zero)
-        {
-            await Task.Delay(remaining, cancellationToken);
-        }
-
-        _stopwatch.Restart();
+        return ValueTask.CompletedTask;
     }
 
     public async ValueTask CompleteAsync(CancellationToken cancellationToken)
@@ -116,7 +103,7 @@ public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable, IAsyncDisp
 
     private async Task HandleJpegStream(HttpContext context)
     {
-        var channel = Channel.CreateBounded<VideoFrame>(new BoundedChannelOptions(2)
+        var channel = Channel.CreateBounded<EncodedVideoFrame>(new BoundedChannelOptions(2)
         {
             SingleReader = true,
             SingleWriter = true,
@@ -163,23 +150,11 @@ public class HttpStreamSink : IPipelineSink<VideoFrame>, IDisposable, IAsyncDisp
 
     private static async Task WriteMjpegFrame(
         HttpResponse response,
-        VideoFrame frame,
+        EncodedVideoFrame frame,
         CancellationToken cancellationToken)
     {
-        var boundaryBuilder = new StringBuilder(
-            $"--frame\r\n" +
-            $"Content-Type: image/jpeg\r\n" +
-            $"Content-Length: {frame.Data.Length}\r\n" +
-            $"X-Received-At: {frame.ReceivedAt:o}\r\n");
-
-        if (frame.Timestamp is not null)
-        {
-            boundaryBuilder.Append($"X-Timestamp: {frame.Timestamp:o}\r\n");
-        }
-
-        boundaryBuilder.Append("\r\n");
-
-        var boundaryBytes = Encoding.UTF8.GetBytes(boundaryBuilder.ToString());
+        var boundaryBytes = Encoding.UTF8.GetBytes(
+            $"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: {frame.Data.Length}\r\n\r\n");
         var endBytes = "\r\n"u8.ToArray();
 
         await response.Body.WriteAsync(boundaryBytes, cancellationToken);

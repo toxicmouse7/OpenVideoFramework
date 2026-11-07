@@ -8,14 +8,13 @@ namespace OpenVideoFramework.RtspSource;
 
 /// <summary>
 /// Connects to an RTSP video stream and outputs RTP packets for pipeline processing.
-/// Supports multiple tracks and maintains stream synchronization and statistics.
+/// Supports multiple tracks and maintains RTCP statistics.
 /// </summary>
 public class RtspSource : IPipelineSource<RtpPacket>, IDisposable
 {
     private readonly object _statisticsLock = new();
     private readonly RtspClient _rtspClient;
     private readonly RtcpStatisticsService _statisticsService = new();
-    private readonly RtpTimestampSynchronizer _timestampSynchronizer = new();
     private readonly List<TrackReceiver> _trackReceivers = [];
     private readonly RtspSourceConfiguration _configuration;
     private ILogger<RtspSource> _logger = null!;
@@ -114,7 +113,6 @@ public class RtspSource : IPipelineSource<RtpPacket>, IDisposable
             {
                 lock (_statisticsLock)
                 {
-                    _timestampSynchronizer.UpdateFromSenderReport(senderReport);
                     _statisticsService.UpdateStatistics(senderReport);
                 }
             }
@@ -151,20 +149,6 @@ public class RtspSource : IPipelineSource<RtpPacket>, IDisposable
                 }
 
                 stopwatch.Restart();
-            }
-
-            DateTimeOffset? timestamp;
-            lock (_statisticsLock)
-            {
-                timestamp = _timestampSynchronizer.ConvertRtpTimestampToUtc(
-                    rtpPacket.Header.SSRC,
-                    rtpPacket.Header.Timestamp,
-                    trackReceiver.Metadata.ClockRate);
-            }
-
-            if (timestamp is not null)
-            {
-                rtpPacket.Stamp(timestamp.Value);
             }
 
             await emit(rtpPacket, token);

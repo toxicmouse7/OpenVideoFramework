@@ -4,15 +4,14 @@ namespace OpenVideoFramework.RtspSource.Rtp;
 
 internal static class RtpSerializer
 {
-    public static RtpPacket DeserializeRtpPacket(byte[] data, PayloadType payloadType, uint clockRate)
+    public static RtpPacket DeserializeRtpPacket(byte[] data, PayloadType payloadType)
     {
         var (header, payloadOffset, payloadLength) = DeserializePacket(data, payloadType);
 
         return new RtpPacket
         {
             Header = header,
-            Content = data[payloadOffset..(payloadOffset + payloadLength)],
-            ClockRate = clockRate
+            Content = data[payloadOffset..(payloadOffset + payloadLength)]
         };
     }
 

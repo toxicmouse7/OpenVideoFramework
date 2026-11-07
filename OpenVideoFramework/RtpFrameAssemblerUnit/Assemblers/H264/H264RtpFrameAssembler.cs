@@ -14,7 +14,8 @@ public class H264RtpFrameAssembler : RtpFrameAssembler
     private readonly ILogger<H264RtpFrameAssembler> _logger;
     private readonly List<byte[]> _nalUnits = [];
     private uint _currentTimestamp;
-    private RtpPacket _lastPacket = null!;
+    private ushort _lastSequence;
+    private uint? _droppedTimestamp;
     private bool _frameContainsIdr;
     private bool _frameContainsSps;
     private bool _frameContainsPps;
@@ -34,22 +35,48 @@ public class H264RtpFrameAssembler : RtpFrameAssembler
             return null;
         }
 
-        if (_nalUnits.Count > 0 && packet.Header.Timestamp != _currentTimestamp)
+        if (_droppedTimestamp == packet.Header.Timestamp)
+        {
+            return null;
+        }
+
+        _droppedTimestamp = null;
+        var assembling = _nalUnits.Count > 0 || _fragmentedNalBuffer is not null;
+        if (assembling && packet.Header.Timestamp != _currentTimestamp)
         {
             _logger.LogWarning("New frame started before previous completed. Dropping incomplete frame.");
             DropFrame();
         }
-
-        _currentTimestamp = packet.Header.Timestamp;
-        _lastPacket = packet;
-
-        if (!TryProcessPacket(packet.Content))
+        else if (assembling && packet.Header.SequenceNumber != unchecked((ushort)(_lastSequence + 1)))
         {
+            _logger.LogWarning("Missing or out-of-order H264 fragment. Dropping incomplete frame.");
+            _droppedTimestamp = packet.Header.Timestamp;
             DropFrame();
             return null;
         }
 
-        return packet.Header.Marker ? CreateFrame() : null;
+        _currentTimestamp = packet.Header.Timestamp;
+        _lastSequence = packet.Header.SequenceNumber;
+
+        if (!TryProcessPacket(packet.Content))
+        {
+            _droppedTimestamp = packet.Header.Timestamp;
+            DropFrame();
+            return null;
+        }
+
+        if (!packet.Header.Marker)
+        {
+            return null;
+        }
+
+        if (_fragmentedNalBuffer is not null)
+        {
+            _droppedTimestamp = packet.Header.Timestamp;
+            DropFrame();
+            return null;
+        }
+        return CreateFrame();
     }
 
     private bool TryProcessPacket(byte[] payload)
@@ -170,19 +197,16 @@ public class H264RtpFrameAssembler : RtpFrameAssembler
         }
     }
 
-    private VideoFrame CreateFrame()
+    private EncodedVideoFrame CreateFrame()
     {
         try
         {
             var frameData = AssembleFrameData();
-            return new VideoFrame
+            return new EncodedVideoFrame
             {
                 Data = frameData,
                 IsKeyFrame = _frameContainsIdr,
-                ReceivedAt = _lastPacket.ReceivedAt,
                 Codec = Codec.H264,
-                Duration = TimeSpan.MinValue,
-                ClockRate = _lastPacket.ClockRate,
                 Width = _width,
                 Height = _height
             };

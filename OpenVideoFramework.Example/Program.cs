@@ -32,12 +32,13 @@ var pipeline = PipelineBuilder
         }))
     .Buffer(256)
     .To(new RtpFrameAssemblerUnit())
-    .To(new FrameFilterUnit<VideoFrame>())
+    .To(new FrameFilterUnit<EncodedVideoFrame>())
     .Buffer(8)
     .Flush(new VideoFileSink(new VideoFileSinkSettings
     {
         RollPeriod = TimeSpan.FromSeconds(10),
-        OutputPath = "video.mp4"
+        OutputPath = "video.mp4",
+        Fps = 25
     }));
 
 using var cts = new CancellationTokenSource();

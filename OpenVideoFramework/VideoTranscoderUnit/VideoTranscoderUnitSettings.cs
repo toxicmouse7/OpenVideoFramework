@@ -4,6 +4,8 @@ namespace OpenVideoFramework.VideoTranscoderUnit;
 
 public class VideoTranscoderUnitSettings
 {
+    public required double Fps { get; init; }
+
     /// <summary>
     /// Output codec.
     /// </summary>

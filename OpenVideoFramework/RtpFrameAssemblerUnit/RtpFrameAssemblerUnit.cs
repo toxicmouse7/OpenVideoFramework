@@ -40,11 +40,6 @@ public class RtpFrameAssemblerUnit : IPipelineUnit<RtpPacket, CompleteFrame>
             return;
         }
 
-        if (packet.Timestamp is not null)
-        {
-            frame.Stamp(packet.Timestamp.Value);
-        }
-
         await emit(frame, cancellationToken);
     }
 

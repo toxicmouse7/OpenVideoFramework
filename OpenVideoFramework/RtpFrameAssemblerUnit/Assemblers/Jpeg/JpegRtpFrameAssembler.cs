@@ -10,7 +10,6 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
     private readonly ILogger<JpegRtpFrameAssembler> _logger;
     private readonly List<RtpJpegFragment> _jpegFragments = [];
     private uint _currentTimestamp;
-    private RtpPacket _lastPacket = null!;
 
     private static readonly byte[][] _defaultLuminanceQuantTables =
     [
@@ -126,7 +125,6 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
         }
 
         _currentTimestamp = packet.Header.Timestamp;
-        _lastPacket = packet;
 
         var expectedOffset = _jpegFragments.Sum(f => f.Data.Length);
         if (header.FragmentOffset != expectedOffset)
@@ -157,19 +155,16 @@ public class JpegRtpFrameAssembler : RtpFrameAssembler
         return null;
     }
 
-    private VideoFrame CreateFrame(RtpJpegHeader header)
+    private EncodedVideoFrame CreateFrame(RtpJpegHeader header)
     {
         try
         {
             var jpegData = AssembleCompleteJpeg(header);
-            return new VideoFrame
+            return new EncodedVideoFrame
             {
                 Data = jpegData,
                 IsKeyFrame = true,
-                ReceivedAt = _lastPacket.ReceivedAt,
                 Codec = Codec.MJPEG,
-                Duration = TimeSpan.MinValue,
-                ClockRate = _lastPacket.ClockRate,
                 Width = header.Width * 8,
                 Height = header.Height * 8
             };
