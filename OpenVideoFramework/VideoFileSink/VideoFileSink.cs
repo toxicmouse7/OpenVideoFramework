@@ -113,7 +113,7 @@ public class VideoFileSink : IPipelineSink<EncodedVideoFrame>, IDisposable
             return;
         }
 
-        _parser = ffmpeg.av_parser_init((int)AVCodecID.AV_CODEC_ID_H264);
+        _parser = ffmpeg.av_parser_init(AVCodecID.AV_CODEC_ID_H264);
         _parserContext = ffmpeg.avcodec_alloc_context3(null);
         if (_parser == null || _parserContext == null)
         {

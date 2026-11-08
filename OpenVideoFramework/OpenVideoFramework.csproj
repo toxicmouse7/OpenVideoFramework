@@ -21,15 +21,15 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="FFmpeg.AutoGen.Abstractions" Version="7.1.1"/>
-        <PackageReference Include="FFmpeg.AutoGen.Bindings.DynamicallyLoaded" Version="7.1.1"/>
+        <PackageReference Include="FFmpeg.AutoGen.Abstractions" Version="9.0.1.1" />
+        <PackageReference Include="FFmpeg.AutoGen.Bindings.DynamicallyLoaded" Version="9.0.1.1" />
         <PackageReference Include="Microsoft.AspNetCore" Version="2.3.13" />
     </ItemGroup>
 
     <ItemGroup>
-        <None Include="../COPYING.LGPLv3" Pack="true" PackagePath=""/>
-        <None Include="../ThirdPartyNotices.txt" Pack="true" PackagePath=""/>
-        <None Include="../LICENSE" Pack="true" PackagePath=""/>
+        <None Include="../COPYING.LGPLv3" Pack="true" PackagePath="" />
+        <None Include="../ThirdPartyNotices.txt" Pack="true" PackagePath="" />
+        <None Include="../LICENSE" Pack="true" PackagePath="" />
     </ItemGroup>
 
 </Project>

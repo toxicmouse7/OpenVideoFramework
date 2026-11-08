@@ -94,7 +94,7 @@ internal sealed unsafe class Encoder : IDisposable
                 {
                     _swsContext = ffmpeg.sws_getCachedContext(_swsContext, source->width, source->height,
                         (AVPixelFormat)source->format, _context->width, _context->height, _context->pix_fmt,
-                        ffmpeg.SWS_BILINEAR, null, null, null);
+                        (int)SwsFlags.SWS_BILINEAR, null, null, null);
                     if (_swsContext == null)
                     {
                         throw new SwsContextUnavailableException();
