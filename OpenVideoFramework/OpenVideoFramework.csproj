@@ -27,7 +27,6 @@
     </ItemGroup>
 
     <ItemGroup>
-        <None Include="../COPYING.LGPLv3" Pack="true" PackagePath="" />
         <None Include="../ThirdPartyNotices.txt" Pack="true" PackagePath="" />
         <None Include="../LICENSE" Pack="true" PackagePath="" />
         <None Include="../README.md" Pack="true" PackagePath="" />

@@ -174,6 +174,16 @@ dotnet pack OpenVideoFramework/OpenVideoFramework.csproj --configuration Release
 
 To create a separate symbols package, add `-p:IncludeSymbols=true -p:SymbolPackageFormat=snupkg`.
 
+## License
+
+See [LICENSE](LICENSE) for the OpenVideoFramework license.
+
+The FFmpeg.AutoGen bindings used by this project (version 9.0.1.1) are MIT-licensed.
+Their copyright notice and full MIT license text are included in
+[ThirdPartyNotices.txt](ThirdPartyNotices.txt).
+Native FFmpeg libraries have their own licenses, which depend on the build configuration;
+see [FFmpeg licensing](https://ffmpeg.org/legal.html).
+
 ## Planned features
 
 - Track merging and media concatenation.
