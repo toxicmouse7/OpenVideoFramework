@@ -12,6 +12,7 @@ internal partial class RtspClient : IDisposable
 {
     private readonly TcpClient _rtspClient;
     private readonly Uri _url;
+    private Uri _controlBaseUrl;
     private readonly string _username;
     private readonly string _password;
 
@@ -29,6 +30,7 @@ internal partial class RtspClient : IDisposable
         _username = _url.UserInfo.Length == 0 ? string.Empty : _url.UserInfo.Split(':')[0];
         _password = _url.UserInfo.Length == 0 ? string.Empty : _url.UserInfo.Split(':')[1];
         _url = new Uri(url.Replace($"{_url.UserInfo}@", string.Empty));
+        _controlBaseUrl = _url;
     }
 
     public async Task ConnectAsync(CancellationToken token) =>
@@ -55,6 +57,12 @@ internal partial class RtspClient : IDisposable
             describeResponse = await ReadResponseAsync(stream, token);
         }
 
+        _controlBaseUrl = describeResponse.Headers.TryGetValue("Content-Base", out var contentBase)
+            ? new Uri(_url, contentBase)
+            : describeResponse.Headers.TryGetValue("Content-Location", out var contentLocation)
+                ? new Uri(_url, contentLocation)
+                : _url;
+
         var sdp = SdpParser.Parse(describeResponse.Body);
 
         return sdp;
@@ -64,7 +72,7 @@ internal partial class RtspClient : IDisposable
     {
         var stream = _rtspClient.GetStream();
 
-        var trackUrl = new Uri($"{_url.Scheme}://{_url.Host}:{_url.Port}{metadata.Prefix}");
+        var trackUrl = new Uri(_controlBaseUrl, metadata.Prefix == "*" ? string.Empty : metadata.Prefix);
         var rtpClient = new RtpClient(metadata);
         var rtcpClient = new RtcpClient();
 
@@ -75,7 +83,7 @@ internal partial class RtspClient : IDisposable
                 "SETUP",
                 trackUrl,
                 token,
-                CreateAuthHeader("SETUP", _url.PathAndQuery),
+                CreateAuthHeader("SETUP", trackUrl.AbsoluteUri),
                 CreateTransportHeader(rtpClient, rtcpClient));
 
             var setupResponse = await ReadResponseAsync(stream, token);

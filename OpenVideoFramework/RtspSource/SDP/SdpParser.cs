@@ -49,8 +49,7 @@ internal class SdpParser
             {
                 if (currentMetadata is not null)
                 {
-                    var uri = new Uri(line[10..].TrimEnd('\r'));
-                    currentMetadata.Prefix = uri.PathAndQuery;
+                    currentMetadata.Prefix = line[10..].Trim();
                 }
             }
         }

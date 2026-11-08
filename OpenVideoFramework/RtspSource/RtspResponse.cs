@@ -6,6 +6,6 @@ internal class RtspResponse
     {
         get; set;
     }
-    public Dictionary<string, string> Headers { get; } = new();
+    public Dictionary<string, string> Headers { get; } = new(StringComparer.OrdinalIgnoreCase);
     public string Body { get; set; } = string.Empty;
 }
