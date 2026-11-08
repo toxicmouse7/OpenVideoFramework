@@ -8,10 +8,12 @@ using OpenVideoFramework.Pipelines.Builder;
 using OpenVideoFramework.RtpFrameAssemblerUnit;
 using OpenVideoFramework.RtspSource;
 using OpenVideoFramework.VideoFileSink;
+using OpenVideoFramework.VideoTranscoderUnit;
 using Serilog;
 using Serilog.Extensions.Logging;
 
 DynamicallyLoadedBindings.LibrariesPath = Environment.ExpandEnvironmentVariables("%FFMPEG_LIB_PATH%");
+DynamicallyLoadedBindings.ThrowErrorIfFunctionNotFound = true;
 DynamicallyLoadedBindings.Initialize();
 
 var logger = new LoggerConfiguration()
@@ -27,13 +29,16 @@ var pipeline = PipelineBuilder
         pipelineContext,
         new RtspSource(new RtspSourceConfiguration
         {
-            Url = "rtsp://172.17.91.213:8554/",
+            Url = "rtsp://localhost:8554/h264",
             AllowedMediaType = MediaType.Video
         }))
-    .Buffer(256)
     .To(new RtpFrameAssemblerUnit())
     .To(new FrameFilterUnit<EncodedVideoFrame>())
-    .Buffer(8)
+    .To(new VideoTranscoderUnit(new VideoTranscoderUnitSettings
+    {
+        Fps = 25,
+        OutputCodec = Codec.MJPEG
+    }))
     .Flush(new VideoFileSink(new VideoFileSinkSettings
     {
         RollPeriod = TimeSpan.FromSeconds(10),
