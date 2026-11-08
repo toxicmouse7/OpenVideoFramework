@@ -4,14 +4,18 @@ namespace OpenVideoFramework.RtspSource.Rtp;
 
 internal static class RtpSerializer
 {
-    public static RtpPacket DeserializeRtpPacket(byte[] data, PayloadType payloadType)
+    public static RtpPacket DeserializeRtpPacket(
+        byte[] data,
+        PayloadType payloadType,
+        IReadOnlyList<byte[]>? h264ParameterSets = null)
     {
         var (header, payloadOffset, payloadLength) = DeserializePacket(data, payloadType);
 
         return new RtpPacket
         {
             Header = header,
-            Content = data[payloadOffset..(payloadOffset + payloadLength)]
+            Content = data[payloadOffset..(payloadOffset + payloadLength)],
+            H264ParameterSets = h264ParameterSets
         };
     }
 

@@ -29,7 +29,7 @@ public class RtpFrameAssemblerUnit : IPipelineUnit<RtpPacket, CompleteFrame>
     {
         if (!_assemblers.TryGetValue(packet.Header.SSRC, out var assembler))
         {
-            assembler = CreateAssembler(packet.Header.PayloadType);
+            assembler = CreateAssembler(packet);
             _assemblers.Add(packet.Header.SSRC, assembler);
         }
 
@@ -43,14 +43,15 @@ public class RtpFrameAssemblerUnit : IPipelineUnit<RtpPacket, CompleteFrame>
         await emit(frame, cancellationToken);
     }
 
-    private RtpFrameAssembler CreateAssembler(PayloadType payloadType)
+    private RtpFrameAssembler CreateAssembler(RtpPacket packet)
     {
-        return payloadType switch
+        return packet.Header.PayloadType switch
         {
             PayloadType.JPEG => new JpegRtpFrameAssembler(_context.GetLogger<JpegRtpFrameAssembler>()),
-            PayloadType.H264 => new H264RtpFrameAssembler(_context.GetLogger<H264RtpFrameAssembler>()),
+            PayloadType.H264 => new H264RtpFrameAssembler(
+                _context.GetLogger<H264RtpFrameAssembler>(), packet.H264ParameterSets),
             PayloadType.AC3 => new Aс3RtpFrameAssembler(_context.GetLogger<Aс3RtpFrameAssembler>()),
-            _ => throw new NotSupportedException($"Payload type {payloadType} is not supported.")
+            _ => throw new NotSupportedException($"Payload type {packet.Header.PayloadType} is not supported.")
         };
     }
 }

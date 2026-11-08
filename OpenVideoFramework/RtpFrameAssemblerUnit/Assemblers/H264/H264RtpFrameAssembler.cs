@@ -16,6 +16,9 @@ public class H264RtpFrameAssembler : RtpFrameAssembler
     private uint _currentTimestamp;
     private ushort _lastSequence;
     private uint? _droppedTimestamp;
+    private bool _frameContainsPicture;
+    private bool _started;
+    private long _skippedFrames;
     private bool _frameContainsIdr;
     private bool _frameContainsSps;
     private bool _frameContainsPps;
@@ -25,7 +28,22 @@ public class H264RtpFrameAssembler : RtpFrameAssembler
     private int _width;
     private int _height;
 
-    public H264RtpFrameAssembler(ILogger<H264RtpFrameAssembler> logger) => _logger = logger;
+    public H264RtpFrameAssembler(ILogger<H264RtpFrameAssembler> logger) : this(logger, null)
+    {
+    }
+
+    internal H264RtpFrameAssembler(ILogger<H264RtpFrameAssembler> logger, IReadOnlyList<byte[]>? parameterSets)
+    {
+        _logger = logger;
+        if (parameterSets is not null)
+        {
+            foreach (var nalUnit in parameterSets)
+            {
+                AppendNalUnit(nalUnit);
+            }
+            DropFrame();
+        }
+    }
 
     public override CompleteFrame? AddPacket(RtpPacket packet)
     {
@@ -180,7 +198,13 @@ public class H264RtpFrameAssembler : RtpFrameAssembler
     {
         _nalUnits.Add([.. _startCode, .. nalUnit]);
 
-        switch (nalUnit[0] & NalTypeMask)
+        var nalType = nalUnit[0] & NalTypeMask;
+        if (nalType is >= 1 and <= 5)
+        {
+            _frameContainsPicture = true;
+        }
+
+        switch (nalType)
         {
             case 5:
                 _frameContainsIdr = true;
@@ -197,10 +221,32 @@ public class H264RtpFrameAssembler : RtpFrameAssembler
         }
     }
 
-    private EncodedVideoFrame CreateFrame()
+    private EncodedVideoFrame? CreateFrame()
     {
         try
         {
+            if (!_frameContainsPicture)
+            {
+                return null;
+            }
+            if (!_started)
+            {
+                if (!_frameContainsIdr || _lastSps is null || _lastPps is null)
+                {
+                    _skippedFrames++;
+                    if (_skippedFrames == 1 || _frameContainsIdr)
+                    {
+                        _logger.LogInformation(
+                            "Skipping H264 frames while waiting for IDR and SPS/PPS. " +
+                            "IDR: {HasIdr}, SPS: {HasSps}, PPS: {HasPps}. Skipped frames: {SkippedFrames}.",
+                            _frameContainsIdr, _lastSps is not null, _lastPps is not null, _skippedFrames);
+                    }
+                    return null;
+                }
+                _started = true;
+                _logger.LogInformation("Starting H264 stream at IDR. Skipped frames: {SkippedFrames}.", _skippedFrames);
+            }
+
             var frameData = AssembleFrameData();
             return new EncodedVideoFrame
             {
@@ -219,22 +265,23 @@ public class H264RtpFrameAssembler : RtpFrameAssembler
 
     private byte[] AssembleFrameData()
     {
-        var nalUnits = new List<byte[]>();
+        var nalUnits = new List<byte[]>(_nalUnits);
 
         if (_frameContainsIdr)
         {
             if (!_frameContainsSps && _lastSps is not null)
             {
-                nalUnits.Add([.. _startCode, .. _lastSps]);
+                nalUnits.Insert(0, [.. _startCode, .. _lastSps]);
             }
 
             if (!_frameContainsPps && _lastPps is not null)
             {
-                nalUnits.Add([.. _startCode, .. _lastPps]);
+                // An in-band SPS must precede a PPS restored from the cache.
+                var spsIndex = nalUnits.FindLastIndex(nal => (nal[_startCode.Length] & NalTypeMask) == 7);
+                nalUnits.Insert(spsIndex + 1, [.. _startCode, .. _lastPps]);
             }
         }
 
-        nalUnits.AddRange(_nalUnits);
         return [.. nalUnits.SelectMany(static x => x)];
     }
 
@@ -260,6 +307,7 @@ public class H264RtpFrameAssembler : RtpFrameAssembler
     {
         _nalUnits.Clear();
         _fragmentedNalBuffer = null;
+        _frameContainsPicture = false;
         _frameContainsIdr = false;
         _frameContainsSps = false;
         _frameContainsPps = false;
