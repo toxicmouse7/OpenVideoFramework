@@ -13,6 +13,7 @@
         <RepositoryUrl>https://github.com/toxicmouse7/OpenVideoFramework</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
         <PackageLicenseFile>LICENSE</PackageLicenseFile>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <DocumentationFile>bin\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
@@ -29,6 +30,7 @@
         <None Include="../COPYING.LGPLv3" Pack="true" PackagePath="" />
         <None Include="../ThirdPartyNotices.txt" Pack="true" PackagePath="" />
         <None Include="../LICENSE" Pack="true" PackagePath="" />
+        <None Include="../README.md" Pack="true" PackagePath="" />
     </ItemGroup>
 
 </Project>
