@@ -1,4 +1,5 @@
 using FFmpeg.AutoGen.Abstractions;
+using Microsoft.Extensions.Logging;
 using OpenVideoFramework.Common;
 using OpenVideoFramework.Pipelines;
 
@@ -14,6 +15,7 @@ public class VideoFileSink : IPipelineSink<EncodedVideoFrame>, IDisposable
     private unsafe AVCodecParameters* _parameters;
     private unsafe AVCodecParserContext* _parser;
     private unsafe AVCodecContext* _parserContext;
+    private ILogger<VideoFileSink> _logger = null!;
     private long _frameCount;
     private int? _lastPictureNumber;
     private bool _headerWritten;
@@ -34,7 +36,12 @@ public class VideoFileSink : IPipelineSink<EncodedVideoFrame>, IDisposable
         }
     }
 
-    public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken)
+    {
+        _logger = context.GetLogger<VideoFileSink>();
+
+        return Task.CompletedTask;
+    }
 
     public ValueTask ConsumeAsync(EncodedVideoFrame frame, CancellationToken cancellationToken)
     {
@@ -251,7 +258,13 @@ public class VideoFileSink : IPipelineSink<EncodedVideoFrame>, IDisposable
             _headerWritten = true;
             _frameCount = 0;
         }
-        catch { CloseFile(); throw; }
+        catch
+        {
+            CloseFile();
+            throw;
+        }
+
+        _logger.LogInformation("Rolling new file: {FileName}.", filename);
     }
 
     private unsafe void CloseFile()
