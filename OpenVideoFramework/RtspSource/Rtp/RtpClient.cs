@@ -9,10 +9,11 @@ internal sealed class RtpClient : IDisposable
     private readonly UdpClient _rtpClient;
     private readonly TrackMetadata _trackMetadata;
 
-    public RtpClient(TrackMetadata trackMetadata)
+    public RtpClient(TrackMetadata trackMetadata, AddressFamily addressFamily)
     {
         _trackMetadata = trackMetadata;
-        _rtpClient = new UdpClient(new IPEndPoint(IPAddress.Any, 0));
+        var bindAddress = addressFamily == AddressFamily.InterNetworkV6 ? IPAddress.IPv6Any : IPAddress.Any;
+        _rtpClient = new UdpClient(new IPEndPoint(bindAddress, 0));
     }
 
     public void Connect(IPEndPoint endPoint) => _rtpClient.Connect(endPoint);

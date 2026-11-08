@@ -73,8 +73,14 @@ internal partial class RtspClient : IDisposable
         var stream = _rtspClient.GetStream();
 
         var trackUrl = new Uri(_controlBaseUrl, metadata.Prefix == "*" ? string.Empty : metadata.Prefix);
-        var rtpClient = new RtpClient(metadata);
-        var rtcpClient = new RtcpClient();
+        var serverAddress = ((IPEndPoint)_rtspClient.Client.RemoteEndPoint!).Address;
+        if (serverAddress.IsIPv4MappedToIPv6)
+        {
+            serverAddress = serverAddress.MapToIPv4();
+        }
+
+        var rtpClient = new RtpClient(metadata, serverAddress.AddressFamily);
+        var rtcpClient = new RtcpClient(serverAddress.AddressFamily);
 
         try
         {
@@ -105,8 +111,9 @@ internal partial class RtspClient : IDisposable
                 }
             }
 
-            rtpClient.Connect(IPEndPoint.Parse($"{_url.Host}:{serverPorts.Split('-').First()}"));
-            rtcpClient.Connect(IPEndPoint.Parse($"{_url.Host}:{serverPorts.Split('-').Last()}"));
+            var ports = serverPorts.Split('-');
+            rtpClient.Connect(new IPEndPoint(serverAddress, int.Parse(ports[0])));
+            rtcpClient.Connect(new IPEndPoint(serverAddress, int.Parse(ports[^1])));
 
             return new TrackReceiver
             {

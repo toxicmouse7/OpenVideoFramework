@@ -7,7 +7,11 @@ internal sealed class RtcpClient : IDisposable
 {
     private readonly UdpClient _rtcpClient;
 
-    public RtcpClient() => _rtcpClient = new UdpClient(new IPEndPoint(IPAddress.Any, 0));
+    public RtcpClient(AddressFamily addressFamily)
+    {
+        var bindAddress = addressFamily == AddressFamily.InterNetworkV6 ? IPAddress.IPv6Any : IPAddress.Any;
+        _rtcpClient = new UdpClient(new IPEndPoint(bindAddress, 0));
+    }
 
     public int Port => ((IPEndPoint)_rtcpClient.Client.LocalEndPoint!).Port;
 
