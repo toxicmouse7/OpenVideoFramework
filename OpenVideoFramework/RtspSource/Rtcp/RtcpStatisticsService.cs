@@ -4,8 +4,8 @@ namespace OpenVideoFramework.RtspSource.Rtcp;
 
 internal class RtcpStatisticsService
 {
-    private readonly Queue<RtcpSenderReport> _srQueue = [];
-    private readonly Dictionary<uint, StreamStatistics> _streamStatistics = new();
+    private readonly Dictionary<uint, RtcpSenderReport> _pendingSenderReports = [];
+    private readonly Dictionary<uint, StreamStatistics> _streamStatistics = [];
     private readonly uint _ssrc = (uint)Random.Shared.Next();
 
     public void UpdateStatistics(RtpPacket rtpPacket, uint clockRate, DateTimeOffset receivedAt)
@@ -19,9 +19,8 @@ internal class RtcpStatisticsService
             _streamStatistics[rtpPacket.Header.SSRC] = streamStatistics;
         }
 
-        while (_srQueue.Count != 0)
+        if (_pendingSenderReports.Remove(rtpPacket.Header.SSRC, out var senderReport))
         {
-            var senderReport = _srQueue.Dequeue();
             streamStatistics.Update(senderReport);
         }
 
@@ -34,7 +33,7 @@ internal class RtcpStatisticsService
 
         if (statistics is null)
         {
-            _srQueue.Enqueue(senderReport);
+            _pendingSenderReports[senderReport.SSRC] = senderReport;
         }
         else
         {
