@@ -16,4 +16,7 @@ public record struct RtpPacketHeader(
     public const short ExtensionsHeaderId = 0;
 
     public const int Size = 12;
+
+    /// <summary>The extension profile identifier, or null when no extension is present.</summary>
+    public ushort? HeaderExtensionProfile { get; init; }
 }

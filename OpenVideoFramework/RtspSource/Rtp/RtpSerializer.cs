@@ -15,6 +15,9 @@ internal static class RtpSerializer
         {
             Header = header,
             Content = data[payloadOffset..(payloadOffset + payloadLength)],
+            HeaderExtensionData = header.Extension
+                ? data.AsMemory()[(payloadOffset - header.HeaderExtensionLength * 4)..payloadOffset]
+                : ReadOnlyMemory<byte>.Empty,
             H264ParameterSets = h264ParameterSets
         };
     }
@@ -54,6 +57,7 @@ internal static class RtpSerializer
             csrc[i] = ReadUInt32NetworkOrder(data, RtpPacketHeader.Size + i * 4);
         }
 
+        ushort? headerExtensionProfile = null;
         ushort headerExtensionLength = 0;
         var payloadOffset = headerSize;
         if (hasExtension)
@@ -63,6 +67,7 @@ internal static class RtpSerializer
                 throw new RtpPacketParseException("RTP packet is shorter than the extension header.");
             }
 
+            headerExtensionProfile = ReadUInt16NetworkOrder(data, payloadOffset);
             headerExtensionLength = ReadUInt16NetworkOrder(data, payloadOffset + 2);
             payloadOffset += 4 + headerExtensionLength * 4;
 
@@ -99,7 +104,10 @@ internal static class RtpSerializer
             ReadUInt32NetworkOrder(data, 4),
             ReadUInt32NetworkOrder(data, 8),
             csrc,
-            headerExtensionLength);
+            headerExtensionLength)
+        {
+            HeaderExtensionProfile = headerExtensionProfile
+        };
 
         return (header, payloadOffset, payloadLength);
     }
