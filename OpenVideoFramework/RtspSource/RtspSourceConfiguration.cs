@@ -6,4 +6,5 @@ public class RtspSourceConfiguration
 {
     public required string Url { get; init; } = null!;
     public MediaType? AllowedMediaType { get; init; } = null!;
+    public RtspTransportType Transport { get; init; } = RtspTransportType.Udp;
 }

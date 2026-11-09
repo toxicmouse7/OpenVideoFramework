@@ -1,142 +1,82 @@
-using System.Net;
-using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
-using OpenVideoFramework.RtspSource.Rtcp;
-using OpenVideoFramework.RtspSource.Rtp;
 using OpenVideoFramework.RtspSource.SDP;
 
 namespace OpenVideoFramework.RtspSource;
 
-internal partial class RtspClient : IDisposable
+internal partial class RtspClient
 {
-    private readonly TcpClient _rtspClient;
+    private readonly RtspTransport _transport;
     private readonly Uri _url;
     private Uri _controlBaseUrl;
     private readonly string _username;
     private readonly string _password;
-
     private int _sequence;
     private string? _sessionId;
     private int? _timeout;
     private string _digestNonce = null!;
     private string _digestRealm = null!;
 
-    public RtspClient(string url)
+    public RtspClient(string url, RtspTransport transport)
     {
         _url = new Uri(url);
-        _rtspClient = new TcpClient();
-
+        _transport = transport;
         _username = _url.UserInfo.Length == 0 ? string.Empty : _url.UserInfo.Split(':')[0];
         _password = _url.UserInfo.Length == 0 ? string.Empty : _url.UserInfo.Split(':')[1];
         _url = new Uri(url.Replace($"{_url.UserInfo}@", string.Empty));
         _controlBaseUrl = _url;
     }
 
-    public async Task ConnectAsync(CancellationToken token) =>
-        await _rtspClient.ConnectAsync(_url.Host, _url.Port, token);
+    public Task ConnectAsync(CancellationToken token) => _transport.ConnectAsync(_url, token);
 
-    public async Task OptionsAsync(CancellationToken token = default)
-    {
-        var stream = _rtspClient.GetStream();
-        await SendRequestAsync(stream, "OPTIONS", _url, token);
-        await ReadResponseAsync(stream, token);
-    }
+    public async Task OptionsAsync(CancellationToken token = default) =>
+        EnsureSuccess(await SendRequestAsync("OPTIONS", _url, token).ConfigureAwait(false));
 
     public async Task<IReadOnlyCollection<TrackMetadata>> DescribeAsync(CancellationToken token = default)
     {
-        var stream = _rtspClient.GetStream();
-        await SendRequestAsync(stream, "DESCRIBE", _url, token, "Accept: application/sdp");
-        var describeResponse = await ReadResponseAsync(stream, token);
-
-        if (describeResponse.StatusCode == 401)
+        var response = await SendRequestAsync("DESCRIBE", _url, token, "Accept: application/sdp").ConfigureAwait(false);
+        if (response.StatusCode == 401)
         {
-            ParseAuthHeaders(describeResponse.Headers);
-
-            await SendRequestAsync(stream, "DESCRIBE", _url, token, CreateAuthHeader("DESCRIBE", _url.PathAndQuery));
-            describeResponse = await ReadResponseAsync(stream, token);
+            ParseAuthHeaders(response.Headers);
+            response = await SendRequestAsync("DESCRIBE", _url, token,
+                "Accept: application/sdp", CreateAuthHeader("DESCRIBE", _url.PathAndQuery)).ConfigureAwait(false);
         }
 
-        _controlBaseUrl = describeResponse.Headers.TryGetValue("Content-Base", out var contentBase)
+        EnsureSuccess(response);
+        _controlBaseUrl = response.Headers.TryGetValue("Content-Base", out var contentBase)
             ? new Uri(_url, contentBase)
-            : describeResponse.Headers.TryGetValue("Content-Location", out var contentLocation)
+            : response.Headers.TryGetValue("Content-Location", out var contentLocation)
                 ? new Uri(_url, contentLocation)
                 : _url;
-
-        var sdp = SdpParser.Parse(describeResponse.Body);
-
-        return sdp;
+        return SdpParser.Parse(response.Body);
     }
 
     public async Task<TrackReceiver> SetupAsync(TrackMetadata metadata, CancellationToken token = default)
     {
-        var stream = _rtspClient.GetStream();
-
         var trackUrl = new Uri(_controlBaseUrl, metadata.Prefix == "*" ? string.Empty : metadata.Prefix);
-        var serverAddress = ((IPEndPoint)_rtspClient.Client.RemoteEndPoint!).Address;
-        if (serverAddress.IsIPv4MappedToIPv6)
+        var track = _transport.CreateTrack(metadata);
+        var response = await SendRequestAsync("SETUP", trackUrl, token,
+            CreateAuthHeader("SETUP", trackUrl.AbsoluteUri), _transport.GetTransportHeader(track)).ConfigureAwait(false);
+        EnsureSuccess(response);
+        _transport.ConfigureTrack(track, response.Headers["Transport"]);
+
+        if (string.IsNullOrEmpty(_sessionId))
         {
-            serverAddress = serverAddress.MapToIPv4();
-        }
-
-        var rtpClient = new RtpClient(metadata, serverAddress.AddressFamily);
-        var rtcpClient = new RtcpClient(serverAddress.AddressFamily);
-
-        try
-        {
-            await SendRequestAsync(
-                stream,
-                "SETUP",
-                trackUrl,
-                token,
-                CreateAuthHeader("SETUP", trackUrl.AbsoluteUri),
-                CreateTransportHeader(rtpClient, rtcpClient));
-
-            var setupResponse = await ReadResponseAsync(stream, token);
-
-            var serverTransport = setupResponse.Headers["Transport"];
-            var serverPorts = serverTransport
-                .Split(';')
-                .First(x => x.StartsWith("server_port="))
-                .Replace("server_port=", "");
-
-            if (string.IsNullOrEmpty(_sessionId))
+            var sessionHeader = response.Headers["Session"];
+            _sessionId = sessionHeader.Split(';')[0];
+            var timeout = TimeoutRegex().Match(sessionHeader);
+            if (timeout.Success)
             {
-                var sessionHeader = setupResponse.Headers.First(x => x.Key == "Session").Value;
-                _sessionId = sessionHeader.Split(';')[0];
-
-                if (_timeout is null && TimeoutRegex().IsMatch(sessionHeader))
-                {
-                    _timeout = int.Parse(TimeoutRegex().Match(sessionHeader).Groups[1].Value);
-                }
+                _timeout = int.Parse(timeout.Groups[1].Value);
             }
-
-            var ports = serverPorts.Split('-');
-            rtpClient.Connect(new IPEndPoint(serverAddress, int.Parse(ports[0])));
-            rtcpClient.Connect(new IPEndPoint(serverAddress, int.Parse(ports[^1])));
-
-            return new TrackReceiver
-            {
-                Metadata = metadata,
-                RtcpClient = rtcpClient,
-                RtpClient = rtpClient
-            };
         }
-        catch
-        {
-            rtpClient.Dispose();
-            rtcpClient.Dispose();
-            throw;
-        }
+
+        return track;
     }
 
-    public async Task PlayAsync(CancellationToken token)
-    {
-        var stream = _rtspClient.GetStream();
-
-        await SendRequestAsync(stream, "PLAY", _url, token, CreateAuthHeader("PLAY", _url.PathAndQuery));
-        await ReadResponseAsync(stream, token);
-    }
+    public async Task PlayAsync(CancellationToken token) =>
+        EnsureSuccess(await SendRequestAsync("PLAY", _url, token,
+            CreateAuthHeader("PLAY", _url.PathAndQuery)).ConfigureAwait(false));
 
     public async Task KeepAliveAsync(CancellationToken token)
     {
@@ -149,147 +89,36 @@ internal partial class RtspClient : IDisposable
         while (true)
         {
             token.ThrowIfCancellationRequested();
-            await GetParameterAsync(token);
-            await Task.Delay(timeout, token);
+            await GetParameterAsync(token).ConfigureAwait(false);
+            await Task.Delay(timeout, token).ConfigureAwait(false);
         }
     }
 
-    public async Task GetParameterAsync(CancellationToken token = default)
-    {
-        var stream = _rtspClient.GetStream();
+    public async Task GetParameterAsync(CancellationToken token = default) =>
+        EnsureSuccess(await SendRequestAsync("GET_PARAMETER", _url, token,
+            CreateAuthHeader("GET_PARAMETER", _url.PathAndQuery)).ConfigureAwait(false));
 
-        await SendRequestAsync(
-            stream,
-            "GET_PARAMETER",
-            _url,
-            token,
-            CreateAuthHeader("GET_PARAMETER", _url.PathAndQuery));
-        await ReadResponseAsync(stream, token);
-    }
-
-    private async Task SendRequestAsync(
-        NetworkStream stream,
-        string method,
-        Uri uri,
-        CancellationToken token,
-        params string[] headers)
+    private Task<RtspResponse> SendRequestAsync(string method, Uri uri, CancellationToken token, params string[] headers)
     {
+        var sequence = Interlocked.Increment(ref _sequence);
         var request = new StringBuilder();
         request.Append($"{method} {uri} RTSP/1.0\r\n");
-        request.Append($"CSeq: {_sequence}\r\n");
+        request.Append($"CSeq: {sequence}\r\n");
         request.Append("User-Agent: C# RTSP Client\r\n");
-
         foreach (var header in headers)
-        {
-            request.Append($"{header}\r\n");
-        }
-
+        { request.Append($"{header}\r\n"); }
         if (!string.IsNullOrEmpty(_sessionId))
-        {
-            request.Append($"Session: {_sessionId}\r\n");
-        }
-
+        { request.Append($"Session: {_sessionId}\r\n"); }
         request.Append("\r\n");
-
-        var bytes = Encoding.ASCII.GetBytes(request.ToString());
-        await stream.WriteAsync(bytes, token);
-
-        _sequence++;
+        return _transport.SendRequestAsync(request.ToString(), sequence, token);
     }
 
-    private async Task<RtspResponse> ReadResponseAsync(NetworkStream stream, CancellationToken token)
+    private static void EnsureSuccess(RtspResponse response)
     {
-        var bytesRead = 0;
-        var buffer = new byte[4096];
-
-        while (true)
+        if (response.StatusCode is < 200 or >= 300)
         {
-            var read = await stream.ReadAsync(buffer.AsMemory(bytesRead, buffer.Length - bytesRead), token);
-            if (read == 0)
-            {
-                break;
-            }
-
-            bytesRead += read;
-
-            var responseStr = Encoding.ASCII.GetString(buffer, 0, bytesRead);
-            if (responseStr.Contains("\r\n\r\n"))
-            {
-                if (TryGetContentLength(responseStr, out var contentLength))
-                {
-                    var headersEnd = responseStr.IndexOf("\r\n\r\n", StringComparison.InvariantCulture) + 4;
-                    var bodyReceived = bytesRead - headersEnd;
-
-                    if (bodyReceived >= contentLength)
-                    {
-                        break;
-                    }
-                }
-                else
-                {
-                    break;
-                }
-            }
-
-            if (bytesRead == buffer.Length)
-            {
-                Array.Resize(ref buffer, buffer.Length * 2);
-            }
+            throw new InvalidOperationException($"RTSP request failed with status {response.StatusCode}.");
         }
-
-        var finalResponseStr = Encoding.ASCII.GetString(buffer, 0, bytesRead);
-        return ParseResponse(finalResponseStr);
-    }
-
-    private static bool TryGetContentLength(string response, out int length)
-    {
-        length = 0;
-        const string ContentLengthHeader = "Content-Length:";
-        var startIndex = response.IndexOf(ContentLengthHeader, StringComparison.OrdinalIgnoreCase);
-
-        if (startIndex == -1)
-        {
-            return false;
-        }
-
-        startIndex += ContentLengthHeader.Length;
-        var endIndex = response.IndexOf("\r\n", startIndex, StringComparison.InvariantCulture);
-        if (endIndex == -1)
-        {
-            return false;
-        }
-
-        var lengthStr = response.Substring(startIndex, endIndex - startIndex).Trim();
-        return int.TryParse(lengthStr, out length);
-    }
-
-    private RtspResponse ParseResponse(string responseStr)
-    {
-        var response = new RtspResponse();
-        var lines = responseStr.Split(["\r\n"], StringSplitOptions.None);
-
-        var statusLine = lines[0].Split(' ');
-        if (statusLine.Length >= 2)
-        {
-            response.StatusCode = int.Parse(statusLine[1]);
-        }
-
-        for (var i = 1; i < lines.Length; i++)
-        {
-            if (string.IsNullOrEmpty(lines[i]))
-            {
-                response.Body = string.Join("\r\n", lines.Skip(i + 1));
-                break;
-            }
-
-            var parts = lines[i].Split([": "], 2, StringSplitOptions.None);
-            if (parts.Length == 2)
-            {
-                response.Headers[parts[0]] = parts[1];
-            }
-        }
-
-        return response;
     }
 
     private void ParseAuthHeaders(Dictionary<string, string> headers)
@@ -336,11 +165,6 @@ internal partial class RtspClient : IDisposable
         var base64Auth = Convert.ToBase64String(Encoding.ASCII.GetBytes(authString));
         return $"Authorization: Basic {base64Auth}";
     }
-
-    private static string CreateTransportHeader(RtpClient rtpClient, RtcpClient rtcpClient) =>
-        $"Transport: RTP/AVP/UDP;unicast;client_port={rtpClient.Port}-{rtcpClient.Port}";
-
-    public void Dispose() => _rtspClient.Dispose();
 
     private static string ComputeMd5Hash(string input)
     {

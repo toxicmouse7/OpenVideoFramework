@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using OpenVideoFramework.Pipelines;
 using OpenVideoFramework.RtspSource.Rtcp;
@@ -10,10 +9,11 @@ namespace OpenVideoFramework.RtspSource;
 /// Connects to an RTSP video stream and outputs RTP packets for pipeline processing.
 /// Supports multiple tracks and maintains RTCP statistics.
 /// </summary>
-public class RtspSource : IPipelineSource<RtpPacket>, IDisposable
+public class RtspSource : IPipelineSource<RtpPacket>, IDisposable, IAsyncDisposable
 {
     private readonly object _statisticsLock = new();
     private readonly RtspClient _rtspClient;
+    private readonly RtspTransport _transport;
     private readonly RtcpStatisticsService _statisticsService = new();
     private readonly List<TrackReceiver> _trackReceivers = [];
     private readonly RtspSourceConfiguration _configuration;
@@ -22,7 +22,13 @@ public class RtspSource : IPipelineSource<RtpPacket>, IDisposable
     public RtspSource(RtspSourceConfiguration configuration)
     {
         _configuration = configuration;
-        _rtspClient = new RtspClient(configuration.Url);
+        _transport = configuration.Transport switch
+        {
+            RtspTransportType.Udp => new UdpRtspTransport(),
+            RtspTransportType.Tcp => new TcpRtspTransport(),
+            _ => throw new ArgumentOutOfRangeException(nameof(configuration.Transport))
+        };
+        _rtspClient = new RtspClient(configuration.Url, _transport);
     }
 
     public async Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken)
@@ -54,8 +60,6 @@ public class RtspSource : IPipelineSource<RtpPacket>, IDisposable
 
     public async Task ProduceAsync(Emit<RtpPacket> emit, CancellationToken cancellationToken)
     {
-        await _rtspClient.PlayAsync(cancellationToken);
-        _logger.LogInformation("Playing RTSP stream.");
         if (_trackReceivers.Count == 0)
         {
             return;
@@ -71,23 +75,32 @@ public class RtspSource : IPipelineSource<RtpPacket>, IDisposable
             }
             catch (Exception ex)
             {
-                if (ex is not OperationCanceledException || !cts.IsCancellationRequested)
+                if (!cts.IsCancellationRequested)
                 {
                     Interlocked.CompareExchange(ref failure, ex, null);
                 }
 
                 await cts.CancelAsync();
+                _transport.Stop();
                 throw;
             }
         }
 
-        var tasks = new List<Task>();
-        tasks.Add(Supervise(() => _rtspClient.KeepAliveAsync(cts.Token)));
-        foreach (var receiver in _trackReceivers)
+        async Task PlayAndKeepAliveAsync()
         {
-            tasks.Add(Supervise(() => ProduceRtpPackets(receiver, emit, cts.Token)));
-            tasks.Add(Supervise(() => CalculateRtcpStatistics(receiver, cts.Token)));
+            await _rtspClient.PlayAsync(cts.Token).ConfigureAwait(false);
+            _logger.LogInformation("Playing RTSP stream.");
+            await _rtspClient.KeepAliveAsync(cts.Token).ConfigureAwait(false);
         }
+
+        // Install media callbacks before PLAY: the response and first packet can arrive together.
+        var tasks = new[]
+        {
+            Supervise(() => _transport.ReceiveAsync(
+                (track, packet, token) => ProduceRtpPacketAsync(track, packet, emit, token),
+                UpdateRtcpStatistics, cts.Token)),
+            Supervise(PlayAndKeepAliveAsync)
+        };
         try
         {
             await Task.WhenAll(tasks).ConfigureAwait(false);
@@ -103,65 +116,48 @@ public class RtspSource : IPipelineSource<RtpPacket>, IDisposable
         }
     }
 
-    private async Task CalculateRtcpStatistics(TrackReceiver trackReceiver, CancellationToken token)
+    private void UpdateRtcpStatistics(RtcpPacket packet)
     {
-        while (!token.IsCancellationRequested)
+        if (packet is RtcpSenderReport senderReport)
         {
-            var rtcpPacket = await trackReceiver.RtcpClient.GetPacketAsync(token);
-
-            if (rtcpPacket is RtcpSenderReport senderReport)
+            lock (_statisticsLock)
             {
-                lock (_statisticsLock)
-                {
-                    _statisticsService.UpdateStatistics(senderReport);
-                }
+                _statisticsService.UpdateStatistics(senderReport);
             }
         }
     }
 
-    private async Task ProduceRtpPackets(
+    private async ValueTask ProduceRtpPacketAsync(
         TrackReceiver trackReceiver,
+        RtpPacket rtpPacket,
         Emit<RtpPacket> emit,
         CancellationToken token)
     {
-        var stopwatch = Stopwatch.StartNew();
-
-        while (!token.IsCancellationRequested)
+        lock (_statisticsLock)
         {
-            var rtpPacket = await trackReceiver.RtpClient.GetPacketAsync(token);
+            _statisticsService.UpdateStatistics(rtpPacket, trackReceiver.Metadata.ClockRate, rtpPacket.ReceivedAt);
+        }
 
+        if (trackReceiver.ReportTimer.Elapsed > TimeSpan.FromSeconds(5))
+        {
+            RtcpReceiverReport? receiverReport;
             lock (_statisticsLock)
             {
-                _statisticsService.UpdateStatistics(rtpPacket, trackReceiver.Metadata.ClockRate, rtpPacket.ReceivedAt);
+                receiverReport = _statisticsService.GetReceiverReport(rtpPacket.Header.SSRC);
             }
 
-            if (stopwatch.Elapsed > TimeSpan.FromSeconds(5))
+            if (receiverReport is not null)
             {
-                RtcpReceiverReport? receiverReport;
-                lock (_statisticsLock)
-                {
-                    receiverReport = _statisticsService.GetReceiverReport(rtpPacket.Header.SSRC);
-                }
-
-                if (receiverReport is not null)
-                {
-                    await trackReceiver.RtcpClient.SendReceiverReportAsync(receiverReport, token);
-                }
-
-                stopwatch.Restart();
+                await _transport.SendReceiverReportAsync(trackReceiver, receiverReport, token).ConfigureAwait(false);
             }
 
-            await emit(rtpPacket, token);
+            trackReceiver.ReportTimer.Restart();
         }
+
+        await emit(rtpPacket, token).ConfigureAwait(false);
     }
 
-    public void Dispose()
-    {
-        foreach (var receiver in _trackReceivers)
-        {
-            receiver.RtpClient.Dispose();
-            receiver.RtcpClient.Dispose();
-        }
-        _rtspClient.Dispose();
-    }
+    public void Dispose() => _transport.Dispose();
+
+    public ValueTask DisposeAsync() => _transport.DisposeAsync();
 }
