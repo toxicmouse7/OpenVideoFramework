@@ -1,5 +1,10 @@
 # Open Video Framework
 
+[![NuGet](https://img.shields.io/nuget/v/OpenVideoFramework?logo=nuget)](https://www.nuget.org/packages/OpenVideoFramework)
+[![Downloads](https://img.shields.io/nuget/dt/OpenVideoFramework?logo=nuget)](https://www.nuget.org/packages/OpenVideoFramework)
+[![Pipeline](https://img.shields.io/gitlab/pipeline-status/toxicmouse7/openvideoframework?gitlab_url=https%3A%2F%2Fgitlab.toxicmouse7.ru&logo=gitlab)](https://gitlab.toxicmouse7.ru/toxicmouse7/openvideoframework/-/pipelines)
+[![License](https://img.shields.io/badge/license-LGPL--2.1-blue)](https://github.com/toxicmouse7/OpenVideoFramework/blob/master/LICENSE)
+
 OpenVideoFramework is a C# library for recording and processing media streams.
 Build a pipeline from an RTSP source or a media file, add processing stages,
 then write the result to a file or serve it over HTTP.
