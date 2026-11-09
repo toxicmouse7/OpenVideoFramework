@@ -6,7 +6,7 @@ then write the result to a file or serve it over HTTP.
 
 ## Features
 
-- RTSP input over UDP, with H.264, MJPEG, and AC3 frame assembly.
+- RTSP input over UDP or TCP, with H.264, MJPEG, and AC3 frame assembly.
 - H.264 and MJPEG video file input and transcoding.
 - Video recording with automatic file rotation, and AC3 audio file output.
 - MJPEG streaming over HTTP.
@@ -49,6 +49,7 @@ var pipeline = PipelineBuilder
     .From(context, new RtspSource(new RtspSourceConfiguration
     {
         Url = "rtsp://localhost:8554/h264",
+        Transport = RtspTransportType.Tcp,
         AllowedMediaType = MediaType.Video
     }))
     .To(new RtpFrameAssemblerUnit())
@@ -75,6 +76,9 @@ catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
 {
 }
 ```
+
+The example uses RTP/RTCP interleaved over the RTSP TCP connection. Omit `Transport`
+or set it to `RtspTransportType.Udp` to use UDP, the default.
 
 Pass your application's `ILoggerFactory` instead of `NullLoggerFactory.Instance` to
 enable logging. See [OpenVideoFramework.Example](OpenVideoFramework.Example) for an
@@ -133,7 +137,6 @@ To add your own components, implement `IPipelineSource<TOutput>`,
 
 ## Current limitations
 
-- RTSP input uses UDP. RTP over RTSP/TCP is not supported yet.
 - Recorded video uses the configured FPS rather than the source timestamps.
 - Direct H.264 recording requires progressive video without B frames or picture
   reordering. The codec and resolution must stay the same throughout a recording.
@@ -160,5 +163,4 @@ separately; see [FFmpeg licensing](https://ffmpeg.org/legal.html).
 ## Planned features
 
 - Track merging and media concatenation.
-- RTSP/TCP media transport.
 - HTTP input and an RTSP server.
