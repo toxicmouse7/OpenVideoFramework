@@ -18,7 +18,6 @@ public class Aс3RtpFrameAssembler : RtpFrameAssembler
     private readonly ILogger<Aс3RtpFrameAssembler> _logger;
     private readonly List<AC3Fragment> _fragments = [];
     private uint _currentTimestamp;
-    private RtpPacket _lastPacket = null!;
 
     public Aс3RtpFrameAssembler(ILogger<Aс3RtpFrameAssembler> logger) => _logger = logger;
 
@@ -44,7 +43,6 @@ public class Aс3RtpFrameAssembler : RtpFrameAssembler
         }
 
         _currentTimestamp = packet.Header.Timestamp;
-        _lastPacket = packet;
 
         var header = RtpAc3Header.Deserialize(packet.Content);
         if (header.FrameType == FrameType.NotInitialFragment && _fragments.Count == 0)
@@ -88,7 +86,6 @@ public class Aс3RtpFrameAssembler : RtpFrameAssembler
         var audioFrame = new AudioFrame
         {
             Data = frameData,
-            ReceivedAt = _lastPacket.ReceivedAt,
             IsKeyFrame = true,
             Codec = Codec.AC3,
             Duration = TimeSpan.FromSeconds(SamplesPerFrame / (double)frameInfo.SampleRate),

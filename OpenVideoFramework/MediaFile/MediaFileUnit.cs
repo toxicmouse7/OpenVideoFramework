@@ -6,7 +6,7 @@ using OpenVideoFramework.Pipelines;
 namespace OpenVideoFramework.MediaFile;
 
 /// <summary>Consumes paths to media files and produces encoded video access units.</summary>
-public class MediaFileUnit : IPipelineUnit<string, CompleteFrame>
+public class MediaFileUnit : IPipelineUnit<string, MediaSample<CompleteFrame>>
 {
     private ILogger<MediaFileUnit> _logger = null!;
 
@@ -16,7 +16,8 @@ public class MediaFileUnit : IPipelineUnit<string, CompleteFrame>
         return Task.CompletedTask;
     }
 
-    public async ValueTask ProcessAsync(string input, Emit<CompleteFrame> emit, CancellationToken cancellationToken)
+    public async ValueTask ProcessAsync(
+        string input, Emit<MediaSample<CompleteFrame>> emit, CancellationToken cancellationToken)
     {
         using var reader = new MediaReader(input);
         while (reader.ReadNext(cancellationToken) is { } frame)
@@ -32,7 +33,7 @@ public class MediaFileUnit : IPipelineUnit<string, CompleteFrame>
         private AVFormatContext* _context;
         private AVPacket* _packet;
         private readonly Dictionary<int, FFmpegBitstreamFilter> _filters = [];
-        private readonly Queue<EncodedVideoFrame> _pending = [];
+        private readonly Queue<MediaSample<CompleteFrame>> _pending = [];
         private bool _ended;
 
         public MediaReader(string path)
@@ -68,7 +69,7 @@ public class MediaFileUnit : IPipelineUnit<string, CompleteFrame>
             }
         }
 
-        public EncodedVideoFrame? ReadNext(CancellationToken cancellationToken)
+        public MediaSample<CompleteFrame>? ReadNext(CancellationToken cancellationToken)
         {
             while (_pending.Count == 0 && !_ended)
             {
@@ -100,7 +101,7 @@ public class MediaFileUnit : IPipelineUnit<string, CompleteFrame>
                     }
                     else
                     {
-                        _pending.Enqueue(Convert(_packet, stream));
+                        _pending.Enqueue(Convert(_packet, stream, stream->time_base));
                     }
                 }
                 finally { ffmpeg.av_packet_unref(_packet); }
@@ -113,14 +114,17 @@ public class MediaFileUnit : IPipelineUnit<string, CompleteFrame>
             while (filter.Receive(_packet))
             {
                 try
-                { _pending.Enqueue(Convert(_packet, stream)); }
+                { _pending.Enqueue(Convert(_packet, stream, filter.TimeBase)); }
                 finally { ffmpeg.av_packet_unref(_packet); }
             }
         }
 
-        private static EncodedVideoFrame Convert(AVPacket* packet, AVStream* stream) =>
-            FFmpegPacketAdapter.FromPacket(packet, FFmpegPacketAdapter.MapCodec(stream->codecpar->codec_id),
-                stream->codecpar->width, stream->codecpar->height);
+        private static MediaSample<CompleteFrame> Convert(AVPacket* packet, AVStream* stream, AVRational timeBase) =>
+            new(FFmpegPacketAdapter.FromPacket(packet, FFmpegPacketAdapter.MapCodec(stream->codecpar->codec_id),
+                    stream->codecpar->width, stream->codecpar->height),
+                stream->index,
+                FFmpegPacketAdapter.FromTimestamp(packet->pts, timeBase),
+                FFmpegPacketAdapter.FromTimestamp(packet->dts, timeBase));
 
         public void Dispose()
         {

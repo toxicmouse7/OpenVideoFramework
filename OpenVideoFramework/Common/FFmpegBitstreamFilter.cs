@@ -6,6 +6,7 @@ internal sealed unsafe class FFmpegBitstreamFilter : IDisposable
 {
     private AVBSFContext* _context;
     internal AVCodecParameters* Parameters => _context->par_out;
+    internal AVRational TimeBase => _context->time_base_out;
 
     internal FFmpegBitstreamFilter(string name, AVCodecParameters* parameters, AVRational timeBase)
     {

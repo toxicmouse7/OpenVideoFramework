@@ -7,12 +7,16 @@ internal static class RtpSerializer
     public static RtpPacket DeserializeRtpPacket(
         byte[] data,
         PayloadType payloadType,
+        int trackId,
+        uint clockRate,
         IReadOnlyList<byte[]>? h264ParameterSets = null)
     {
         var (header, payloadOffset, payloadLength) = DeserializePacket(data, payloadType);
 
         return new RtpPacket
         {
+            TrackId = trackId,
+            ClockRate = clockRate,
             Header = header,
             Content = data[payloadOffset..(payloadOffset + payloadLength)],
             HeaderExtensionData = header.Extension

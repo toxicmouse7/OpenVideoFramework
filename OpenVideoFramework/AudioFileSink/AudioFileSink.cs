@@ -8,55 +8,97 @@ namespace OpenVideoFramework.AudioFileSink;
 /// <summary>
 /// Writes <see cref="AudioFrame"/> to containers (e.g. ac3) with automatic file rotation.
 /// </summary>
-public class AudioFileSink : IPipelineSink<AudioFrame>, IDisposable
+public class AudioFileSink : IPipelineSink<MediaSample<AudioFrame>>, IDisposable
 {
     private readonly AudioFileSinkSettings _settings;
     private unsafe AVFormatContext* _formatContext;
     private unsafe AVStream* _audioStream;
-    private TimeSpan _totalDuration;
+    private TimeSpan _nextPts;
+    private TimeSpan _segmentStart;
+    private TimeSpan? _lastPts;
+    private long? _lastDts;
+    private int? _trackId;
 
     public AudioFileSink(AudioFileSinkSettings settings) => _settings = settings;
 
     public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken) =>
         Task.CompletedTask;
 
-    public ValueTask ConsumeAsync(AudioFrame frame, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(MediaSample<AudioFrame> sample, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ConsumeFrame(frame);
+        ConsumeFrame(sample);
         return ValueTask.CompletedTask;
     }
 
-    private unsafe void ConsumeFrame(AudioFrame frame)
+    private unsafe void ConsumeFrame(MediaSample<AudioFrame> sample)
     {
-        if (_formatContext == null || _totalDuration >= _settings.RollPeriod)
+        var frame = sample.Frame;
+        if (_trackId.HasValue && _trackId != sample.TrackId)
         {
-            RollFile(frame);
+            throw new NotSupportedException("An audio file sink records one track. Use a separate sink per track.");
         }
 
-        WritePacketToContainer(frame);
+        if (frame.SampleRate <= 0 || frame.Duration <= TimeSpan.Zero)
+        {
+            throw new ArgumentException(
+                "Audio recording requires a positive sample rate and frame duration.", nameof(sample));
+        }
+
+        _trackId = sample.TrackId;
+        var pts = sample.Pts ?? sample.Dts ?? _nextPts;
+        if (_lastPts.HasValue && pts <= _lastPts.Value)
+        {
+            throw new NotSupportedException("Audio presentation timestamps must increase.");
+        }
+
+        if (_formatContext == null || pts - _segmentStart >= _settings.RollPeriod)
+        {
+            RollFile(frame);
+            _segmentStart = pts;
+        }
+
+        WritePacketToContainer(sample, pts);
     }
 
-    private unsafe void WritePacketToContainer(AudioFrame frame)
+    private unsafe void WritePacketToContainer(MediaSample<AudioFrame> sample, TimeSpan pts)
     {
+        var frame = sample.Frame;
         if (_formatContext == null)
         {
             return;
         }
 
         var packet = ffmpeg.av_packet_alloc();
+        if (packet == null)
+        {
+            throw new OutOfMemoryException();
+        }
+
         try
         {
-            ffmpeg.av_new_packet(packet, frame.Data.Length);
+            FFmpegPacketAdapter.Check(ffmpeg.av_new_packet(packet, frame.Data.Length));
 
             Marshal.Copy(frame.Data, 0, (IntPtr)packet->data, frame.Data.Length);
 
             packet->size = frame.Data.Length;
             packet->stream_index = _audioStream->index;
+            packet->pts = FFmpegPacketAdapter.ToTimestamp(pts, _audioStream->time_base);
+            // The only supported audio codec is AC3, which has no picture reordering.
+            var dts = FFmpegPacketAdapter.ToTimestamp(sample.Dts ?? pts, _audioStream->time_base);
+            packet->dts = dts;
+            packet->duration = FFmpegPacketAdapter.ToTimestamp(frame.Duration, _audioStream->time_base);
+            if (dts > packet->pts || (_lastDts.HasValue && dts <= _lastDts.Value) || packet->duration <= 0)
+            {
+                throw new NotSupportedException(
+                    "Audio timestamps and duration cannot be represented correctly in the output stream.");
+            }
 
-            ffmpeg.av_interleaved_write_frame(_formatContext, packet);
+            FFmpegPacketAdapter.Check(ffmpeg.av_interleaved_write_frame(_formatContext, packet));
 
-            _totalDuration += frame.Duration;
+            _lastDts = dts;
+            _lastPts = pts;
+            _nextPts = pts + frame.Duration;
         }
         finally
         {
@@ -69,7 +111,6 @@ public class AudioFileSink : IPipelineSink<AudioFrame>, IDisposable
         if ((IntPtr)_formatContext != IntPtr.Zero)
         {
             ReleaseUnmanagedResources();
-            _totalDuration = TimeSpan.Zero;
         }
 
         var extension = Path.GetExtension(_settings.OutputPath);
@@ -88,10 +129,19 @@ public class AudioFileSink : IPipelineSink<AudioFrame>, IDisposable
 
         fixed (AVFormatContext** formatContextPtr = &_formatContext)
         {
-            ffmpeg.avformat_alloc_output_context2(formatContextPtr, null, null, filename);
+            FFmpegPacketAdapter.Check(ffmpeg.avformat_alloc_output_context2(formatContextPtr, null, null, filename));
+        }
+
+        if (_formatContext == null)
+        {
+            throw new OutOfMemoryException();
         }
 
         _audioStream = ffmpeg.avformat_new_stream(_formatContext, null);
+        if (_audioStream == null)
+        {
+            throw new OutOfMemoryException();
+        }
         _audioStream->codecpar->codec_type = AVMediaType.AVMEDIA_TYPE_AUDIO;
         _audioStream->codecpar->codec_id = MapCodec(frame.Codec);
         _audioStream->codecpar->sample_rate = frame.SampleRate;
@@ -100,8 +150,9 @@ public class AudioFileSink : IPipelineSink<AudioFrame>, IDisposable
         _audioStream->codecpar->bit_rate = frame.Bitrate;
         _audioStream->time_base = ffmpeg.av_make_q(1, frame.SampleRate);
 
-        ffmpeg.avio_open(&_formatContext->pb, filename, ffmpeg.AVIO_FLAG_WRITE);
-        ffmpeg.avformat_write_header(_formatContext, null);
+        FFmpegPacketAdapter.Check(ffmpeg.avio_open(&_formatContext->pb, filename, ffmpeg.AVIO_FLAG_WRITE));
+        FFmpegPacketAdapter.Check(ffmpeg.avformat_write_header(_formatContext, null));
+        _lastDts = null;
     }
 
     private static unsafe AVChannelLayout GetChannelLayout(int channelCount)
@@ -148,6 +199,12 @@ public class AudioFileSink : IPipelineSink<AudioFrame>, IDisposable
     {
         ReleaseUnmanagedResources();
         GC.SuppressFinalize(this);
+    }
+
+    public ValueTask CompleteAsync(CancellationToken cancellationToken)
+    {
+        Dispose();
+        return ValueTask.CompletedTask;
     }
 
     ~AudioFileSink()

@@ -39,8 +39,10 @@ public class RtspSource : IPipelineSource<RtpPacket>, IDisposable, IAsyncDisposa
 
         var metadata = await _rtspClient.DescribeAsync(cancellationToken);
 
+        var trackId = 0;
         foreach (var trackMetadata in metadata)
         {
+            var id = trackId++;
             if (_configuration.AllowedMediaType is not null &&
                 trackMetadata.MediaType != _configuration.AllowedMediaType)
             {
@@ -49,6 +51,7 @@ public class RtspSource : IPipelineSource<RtpPacket>, IDisposable, IAsyncDisposa
             }
 
             var trackReceiver = await _rtspClient.SetupAsync(trackMetadata, cancellationToken);
+            trackReceiver.TrackId = id;
             _trackReceivers.Add(trackReceiver);
 
             _logger.LogInformation(
@@ -136,6 +139,7 @@ public class RtspSource : IPipelineSource<RtpPacket>, IDisposable, IAsyncDisposa
         lock (_statisticsLock)
         {
             _statisticsService.UpdateStatistics(rtpPacket, trackReceiver.Metadata.ClockRate, rtpPacket.ReceivedAt);
+            rtpPacket.WallClock = _statisticsService.GetWallClock(rtpPacket.Header.SSRC, rtpPacket.Header.Timestamp);
         }
 
         if (trackReceiver.ReportTimer.Elapsed > TimeSpan.FromSeconds(5))

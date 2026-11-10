@@ -4,12 +4,14 @@ using OpenVideoFramework.Pipelines;
 
 namespace OpenVideoFramework.VideoTranscoderUnit;
 
-public sealed class VideoTranscoderUnit : IPipelineUnit<EncodedVideoFrame, EncodedVideoFrame>, IDisposable
+public sealed class VideoTranscoderUnit :
+    IPipelineUnit<MediaSample<EncodedVideoFrame>, MediaSample<EncodedVideoFrame>>, IDisposable
 {
     private readonly VideoTranscoderUnitSettings _settings;
     private ILogger<VideoTranscoderUnit> _logger = null!;
     private Decoder? _decoder;
     private Encoder? _encoder;
+    private int? _trackId;
 
     public VideoTranscoderUnit(VideoTranscoderUnitSettings settings)
     {
@@ -27,14 +29,24 @@ public sealed class VideoTranscoderUnit : IPipelineUnit<EncodedVideoFrame, Encod
         return Task.CompletedTask;
     }
 
-    public async ValueTask ProcessAsync(EncodedVideoFrame frame, Emit<EncodedVideoFrame> emit, CancellationToken cancellationToken)
+    public async ValueTask ProcessAsync(
+        MediaSample<EncodedVideoFrame> sample,
+        Emit<MediaSample<EncodedVideoFrame>> emit,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        _decoder ??= new Decoder(frame, _settings.SpecificDecoder);
-        await EncodeFrames(_decoder.Decode(frame), emit, cancellationToken);
+        if (_trackId.HasValue && _trackId != sample.TrackId)
+        {
+            throw new NotSupportedException("A video transcoder processes one track. Use a separate unit per track.");
+        }
+
+        _trackId = sample.TrackId;
+        _decoder ??= new Decoder(sample.Frame, _settings.SpecificDecoder);
+        await EncodeFrames(_decoder.Decode(sample), emit, cancellationToken);
     }
 
-    private async ValueTask EncodeFrames(List<RawFrame> frames, Emit<EncodedVideoFrame> emit, CancellationToken token)
+    private async ValueTask EncodeFrames(
+        List<RawFrame> frames, Emit<MediaSample<EncodedVideoFrame>> emit, CancellationToken token)
     {
         try
         {
@@ -42,7 +54,7 @@ public sealed class VideoTranscoderUnit : IPipelineUnit<EncodedVideoFrame, Encod
             {
                 if (_encoder is null)
                 {
-                    _encoder = new Encoder(_settings, raw);
+                    _encoder = new Encoder(_settings, raw, _trackId!.Value);
                     _logger.LogInformation("Initialized encoder {encoder} and decoder {decoder}.", _encoder.Name, _decoder!.Name);
                 }
                 foreach (var encoded in _encoder.Encode(raw))
@@ -60,7 +72,8 @@ public sealed class VideoTranscoderUnit : IPipelineUnit<EncodedVideoFrame, Encod
         }
     }
 
-    public async ValueTask CompleteAsync(Emit<EncodedVideoFrame> emit, CancellationToken cancellationToken)
+    public async ValueTask CompleteAsync(
+        Emit<MediaSample<EncodedVideoFrame>> emit, CancellationToken cancellationToken)
     {
         if (_decoder is null)
         {

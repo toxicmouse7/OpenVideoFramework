@@ -11,10 +11,15 @@ internal sealed unsafe class Encoder : IDisposable
     private AVCodecContext* _context;
     private SwsContext* _swsContext;
     private FFmpegBitstreamFilter? _filter;
-    private long _frameCounter;
+    private readonly int _trackId;
+    private readonly Dictionary<long, DateTimeOffset> _wallClocks = [];
+    private long _nextPts;
+    private long? _lastPts;
+    private readonly long _frameDuration;
 
-    internal Encoder(VideoTranscoderUnitSettings settings, RawFrame firstFrame)
+    internal Encoder(VideoTranscoderUnitSettings settings, RawFrame firstFrame, int trackId)
     {
+        _trackId = trackId;
         _codec = settings.OutputCodec;
         var codec = settings.SpecificEncoder is null
             ? ffmpeg.avcodec_find_encoder(FFmpegPacketAdapter.MapCodec(_codec))
@@ -40,8 +45,9 @@ internal sealed unsafe class Encoder : IDisposable
             _context->width = firstFrame.AVFrame->width;
             _context->height = firstFrame.AVFrame->height;
             _context->framerate = ffmpeg.av_d2q(settings.Fps, 1000000);
-            _context->time_base = ffmpeg.av_inv_q(_context->framerate);
-            if (_context->time_base.num <= 0 || _context->time_base.den <= 0)
+            _context->time_base = FFmpegPacketAdapter.TimeSpanTimeBase;
+            _frameDuration = ffmpeg.av_rescale_q(1, ffmpeg.av_inv_q(_context->framerate), _context->time_base);
+            if (_frameDuration <= 0)
             {
                 throw new ArgumentOutOfRangeException(nameof(settings.Fps));
             }
@@ -81,10 +87,10 @@ internal sealed unsafe class Encoder : IDisposable
 
     internal string? Name => Marshal.PtrToStringAnsi((IntPtr)_context->codec->long_name);
 
-    internal List<EncodedVideoFrame> Encode(RawFrame? raw)
+    internal List<MediaSample<EncodedVideoFrame>> Encode(RawFrame? raw)
     {
         AVFrame* converted = null;
-        var frames = new List<EncodedVideoFrame>();
+        var frames = new List<MediaSample<EncodedVideoFrame>>();
         try
         {
             var source = raw is null ? null : raw.AVFrame;
@@ -114,9 +120,31 @@ internal sealed unsafe class Encoder : IDisposable
                         0, source->height, converted->data, converted->linesize));
                     source = converted;
                 }
-                source->pts = _frameCounter++;
+                var pts = raw!.Pts.HasValue
+                    ? FFmpegPacketAdapter.ToTimestamp(raw.Pts, _context->time_base)
+                    : _nextPts;
+                if (_lastPts.HasValue && pts <= _lastPts.Value)
+                {
+                    throw new NotSupportedException(
+                        "Decoded PTS must increase; the known timestamps conflict with preceding frames or the FPS fallback.");
+                }
+
+                if (raw.WallClock is { } wallClock)
+                {
+                    if (_wallClocks.Count >= 4096)
+                    {
+                        throw new NotSupportedException(
+                            "The encoder has not returned timestamps for pending wall-clock associations.");
+                    }
+
+                    _wallClocks.Add(pts, wallClock);
+                }
+
+                _lastPts = pts;
+                _nextPts = checked(pts + _frameDuration);
+                source->pts = pts;
                 source->pict_type = AVPictureType.AV_PICTURE_TYPE_NONE;
-                source->duration = 1;
+                source->duration = _frameDuration;
             }
             var result = ffmpeg.avcodec_send_frame(_context, source);
             if (result == ffmpeg.AVERROR(ffmpeg.EAGAIN))
@@ -136,7 +164,7 @@ internal sealed unsafe class Encoder : IDisposable
         finally { ffmpeg.av_frame_free(&converted); }
     }
 
-    private void Receive(List<EncodedVideoFrame> frames)
+    private void Receive(List<MediaSample<EncodedVideoFrame>> frames)
     {
         var packet = ffmpeg.av_packet_alloc();
         if (packet == null)
@@ -157,7 +185,7 @@ internal sealed unsafe class Encoder : IDisposable
                 FFmpegPacketAdapter.Check(result);
                 if (_filter is null)
                 {
-                    frames.Add(Convert(packet));
+                    frames.Add(Convert(packet, _context->time_base));
                 }
                 else
                 {
@@ -170,7 +198,7 @@ internal sealed unsafe class Encoder : IDisposable
         finally { ffmpeg.av_packet_free(&packet); }
     }
 
-    private void ReceiveFiltered(List<EncodedVideoFrame> frames)
+    private void ReceiveFiltered(List<MediaSample<EncodedVideoFrame>> frames)
     {
         var packet = ffmpeg.av_packet_alloc();
         if (packet == null)
@@ -182,15 +210,27 @@ internal sealed unsafe class Encoder : IDisposable
         {
             while (_filter!.Receive(packet))
             {
-                frames.Add(Convert(packet));
+                frames.Add(Convert(packet, _filter.TimeBase));
                 ffmpeg.av_packet_unref(packet);
             }
         }
         finally { ffmpeg.av_packet_free(&packet); }
     }
 
-    private EncodedVideoFrame Convert(AVPacket* packet) =>
-        FFmpegPacketAdapter.FromPacket(packet, _codec, _context->width, _context->height);
+    private MediaSample<EncodedVideoFrame> Convert(AVPacket* packet, AVRational timeBase)
+    {
+        DateTimeOffset? wallClock = null;
+        if (packet->pts != ffmpeg.AV_NOPTS_VALUE &&
+            _wallClocks.Remove(ffmpeg.av_rescale_q(packet->pts, timeBase, _context->time_base), out var time))
+        {
+            wallClock = time;
+        }
+
+        return new MediaSample<EncodedVideoFrame>(
+            FFmpegPacketAdapter.FromPacket(packet, _codec, _context->width, _context->height), _trackId,
+            FFmpegPacketAdapter.FromTimestamp(packet->pts, timeBase),
+            FFmpegPacketAdapter.FromTimestamp(packet->dts, timeBase), wallClock);
+    }
 
     public void Dispose()
     {

@@ -6,6 +6,7 @@ namespace OpenVideoFramework.RtspSource;
 
 internal sealed class TrackReceiver
 {
+    public int TrackId { get; set; }
     public TrackMetadata Metadata { get; }
     public IReadOnlyList<byte[]>? H264ParameterSets { get; }
     public Stopwatch ReportTimer { get; } = Stopwatch.StartNew();

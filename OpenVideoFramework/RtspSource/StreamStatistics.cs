@@ -22,6 +22,10 @@ internal class StreamStatistics
     // Sender report info
     private ulong _lastSenderReportNtpTimestamp;
     private DateTimeOffset _lastSenderReportReceivedTime;
+    private uint _senderReportRtpTimestamp;
+    private long? _extendedTimestamp;
+    private long? _senderReportExtendedTimestamp;
+    private DateTimeOffset? _senderReportPresentationTime;
 
     public uint SSRC
     {
@@ -51,6 +55,13 @@ internal class StreamStatistics
 
     public void Update(RtpPacket packet, DateTimeOffset receivedAt)
     {
+        var extended = ExtendTimestamp(packet.Header.Timestamp);
+        _extendedTimestamp = Math.Max(_extendedTimestamp ?? extended, extended);
+        if (_senderReportPresentationTime.HasValue && !_senderReportExtendedTimestamp.HasValue)
+        {
+            _senderReportExtendedTimestamp = ExtendTimestamp(_senderReportRtpTimestamp);
+        }
+
         TotalPacketsReceived++;
 
         var seq = packet.Header.SequenceNumber;
@@ -81,7 +92,7 @@ internal class StreamStatistics
         }
 
         var arrivalDiff = (receivedAt - _lastPacketArrivalTime).TotalSeconds;
-        var timestampDiff = (double)(packet.Header.Timestamp - _lastRtpTimestamp) / _clockRate;
+        var timestampDiff = (double)unchecked((int)(packet.Header.Timestamp - _lastRtpTimestamp)) / _clockRate;
 
         var deviation = Math.Abs(arrivalDiff - timestampDiff);
 
@@ -96,6 +107,47 @@ internal class StreamStatistics
         _lastSenderReportNtpTimestamp = ((ulong)report.SenderInfo.NtpTimestampSeconds << 32)
                                      | report.SenderInfo.NtpTimestampFractions;
         _lastSenderReportReceivedTime = report.ReceivedAt;
+        _senderReportRtpTimestamp = report.SenderInfo.RtpTimestamp;
+        _senderReportExtendedTimestamp = _extendedTimestamp.HasValue
+            ? ExtendTimestamp(_senderReportRtpTimestamp)
+            : null;
+
+        // NTP seconds start in 1900, and roll over every 2^32 seconds. Reception time
+        // disambiguates the era only; it is never used as presentation time.
+        var epoch = new DateTimeOffset(1900, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var era = (long)((report.ReceivedAt - epoch).TotalSeconds / 4294967296d);
+        var seconds = era * 4294967296L + report.SenderInfo.NtpTimestampSeconds;
+        var time = epoch.AddSeconds(seconds);
+        if (time - report.ReceivedAt > TimeSpan.FromDays(24855))
+        {
+            time = time.AddSeconds(-4294967296d);
+        }
+        else if (report.ReceivedAt - time > TimeSpan.FromDays(24855))
+        {
+            time = time.AddSeconds(4294967296d);
+        }
+
+        // A zero NTP timestamp means the sender has no wall clock.
+        _senderReportPresentationTime = _lastSenderReportNtpTimestamp == 0
+            ? null
+            : time.AddTicks((long)(((ulong)report.SenderInfo.NtpTimestampFractions * TimeSpan.TicksPerSecond) >> 32));
+    }
+
+    private long ExtendTimestamp(uint timestamp) => _extendedTimestamp is { } previous
+        ? previous + unchecked((int)(timestamp - (uint)previous))
+        : timestamp;
+
+    public DateTimeOffset? GetWallClock(uint timestamp)
+    {
+        if (_senderReportPresentationTime is not { } time ||
+            _senderReportExtendedTimestamp is not { } reference || _clockRate == 0)
+        {
+            return null;
+        }
+
+        var ticks = checked((long)Math.Round(
+            (ExtendTimestamp(timestamp) - reference) * (decimal)TimeSpan.TicksPerSecond / _clockRate));
+        return time.AddTicks(ticks);
     }
 
     public ReportBlock GenerateReportBlock()

@@ -2,6 +2,10 @@ namespace OpenVideoFramework.RtspSource.Rtp;
 
 public class RtpPacket
 {
+    public required int TrackId { get; init; }
+    public required uint ClockRate { get; init; }
+    internal DateTimeOffset? WallClock { get; set; }
+
     public RtpPacketHeader Header
     {
         get; init;

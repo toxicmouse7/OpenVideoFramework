@@ -34,6 +34,8 @@ internal sealed unsafe class Decoder : IDisposable
 
             _context->width = frame.Width;
             _context->height = frame.Height;
+            _context->pkt_timebase = FFmpegPacketAdapter.TimeSpanTimeBase;
+            _context->flags |= ffmpeg.AV_CODEC_FLAG_COPY_OPAQUE;
             FFmpegPacketAdapter.Check(ffmpeg.avcodec_open2(_context, codec, null));
         }
         catch { Dispose(); throw; }
@@ -41,12 +43,32 @@ internal sealed unsafe class Decoder : IDisposable
 
     internal string? Name => Marshal.PtrToStringAnsi((IntPtr)_context->codec->long_name);
 
-    internal List<RawFrame> Decode(EncodedVideoFrame? frame)
+    internal List<RawFrame> Decode(MediaSample<EncodedVideoFrame>? sample)
     {
-        var packet = frame is null ? null : FFmpegPacketAdapter.ToPacket(frame);
+        var packet = sample is null ? null : FFmpegPacketAdapter.ToPacket(sample.Frame);
         var frames = new List<RawFrame>();
         try
         {
+            if (packet != null)
+            {
+                packet->pts = FFmpegPacketAdapter.ToTimestamp(sample!.Pts, _context->pkt_timebase);
+                packet->dts = FFmpegPacketAdapter.ToTimestamp(sample.Dts, _context->pkt_timebase);
+                if (sample.WallClock is { } wallClock)
+                {
+                    // FFmpeg carries this reference with the corresponding decoded picture,
+                    // including when the decoder delays or reorders output.
+                    packet->opaque_ref = ffmpeg.av_buffer_alloc(2 * sizeof(long));
+                    if (packet->opaque_ref == null)
+                    {
+                        throw new OutOfMemoryException();
+                    }
+
+                    var metadata = (long*)packet->opaque_ref->data;
+                    metadata[0] = packet->pts;
+                    metadata[1] = wallClock.UtcTicks;
+                }
+            }
+
             var result = ffmpeg.avcodec_send_packet(_context, packet);
             if (result == ffmpeg.AVERROR(ffmpeg.EAGAIN))
             {
@@ -94,7 +116,17 @@ internal sealed unsafe class Decoder : IDisposable
                     throw new OutOfMemoryException();
                 }
 
-                frames.Add(new RawFrame(clone));
+                DateTimeOffset? wallClock = null;
+                if (clone->opaque_ref != null && clone->opaque_ref->size == 2 * sizeof(long))
+                {
+                    var metadata = (long*)clone->opaque_ref->data;
+                    if (metadata[0] != ffmpeg.AV_NOPTS_VALUE && metadata[0] == clone->pts)
+                    {
+                        wallClock = new DateTimeOffset(metadata[1], TimeSpan.Zero);
+                    }
+                }
+
+                frames.Add(new RawFrame(clone, wallClock));
                 ffmpeg.av_frame_unref(frame);
             }
         }

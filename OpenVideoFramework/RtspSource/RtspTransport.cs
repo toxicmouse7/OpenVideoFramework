@@ -129,7 +129,8 @@ internal abstract class RtspTransport : IDisposable, IAsyncDisposable
             throw new InvalidDataException("Received RTP before starting media reception.");
         }
 
-        var packet = RtpSerializer.DeserializeRtpPacket(data, track.Metadata.PayloadType, track.H264ParameterSets);
+        var packet = RtpSerializer.DeserializeRtpPacket(
+            data, track.Metadata.PayloadType, track.TrackId, track.Metadata.ClockRate, track.H264ParameterSets);
         return _onRtp(track, packet, token);
     }
 

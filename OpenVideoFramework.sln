@@ -4,6 +4,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenVideoFramework", "OpenV
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenVideoFramework.Example", "OpenVideoFramework.Example\OpenVideoFramework.Example.csproj", "{D3ED1989-CAA0-4940-BC3B-5F8F7B1CD9F3}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenVideoFramework.Tests", "OpenVideoFramework.Tests\OpenVideoFramework.Tests.csproj", "{CC516D24-2D81-4DC5-BF72-945E03F8B5C2}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -18,5 +20,9 @@ Global
 		{D3ED1989-CAA0-4940-BC3B-5F8F7B1CD9F3}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D3ED1989-CAA0-4940-BC3B-5F8F7B1CD9F3}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D3ED1989-CAA0-4940-BC3B-5F8F7B1CD9F3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CC516D24-2D81-4DC5-BF72-945E03F8B5C2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CC516D24-2D81-4DC5-BF72-945E03F8B5C2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CC516D24-2D81-4DC5-BF72-945E03F8B5C2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CC516D24-2D81-4DC5-BF72-945E03F8B5C2}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

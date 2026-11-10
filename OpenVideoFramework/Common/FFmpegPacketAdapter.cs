@@ -5,6 +5,50 @@ namespace OpenVideoFramework.Common;
 
 internal static unsafe class FFmpegPacketAdapter
 {
+    internal static readonly AVRational TimeSpanTimeBase = new() { num = 1, den = (int)TimeSpan.TicksPerSecond };
+
+    internal static TimeSpan? FromTimestamp(long timestamp, AVRational timeBase)
+    {
+        if (timestamp == ffmpeg.AV_NOPTS_VALUE)
+        {
+            return null;
+        }
+
+        ValidateTimeBase(timeBase);
+        var ticks = ffmpeg.av_rescale_q(timestamp, timeBase, TimeSpanTimeBase);
+        if (ticks == long.MinValue)
+        {
+            throw new NotSupportedException("The media timestamp is outside the TimeSpan range.");
+        }
+
+        return TimeSpan.FromTicks(ticks);
+    }
+
+    internal static long ToTimestamp(TimeSpan? timestamp, AVRational timeBase)
+    {
+        if (!timestamp.HasValue)
+        {
+            return ffmpeg.AV_NOPTS_VALUE;
+        }
+
+        ValidateTimeBase(timeBase);
+        var value = ffmpeg.av_rescale_q(timestamp.Value.Ticks, TimeSpanTimeBase, timeBase);
+        if (value == ffmpeg.AV_NOPTS_VALUE)
+        {
+            throw new NotSupportedException("The media timestamp cannot be represented in the FFmpeg time base.");
+        }
+
+        return value;
+    }
+
+    private static void ValidateTimeBase(AVRational timeBase)
+    {
+        if (timeBase.num <= 0 || timeBase.den <= 0)
+        {
+            throw new InvalidOperationException("The media time base must be positive.");
+        }
+    }
+
     internal static void Check(int result)
     {
         if (result >= 0)

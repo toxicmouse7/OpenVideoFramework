@@ -11,9 +11,9 @@ namespace OpenVideoFramework.RtpFrameAssemblerUnit;
 /// <summary>
 /// Assembles individual RTP packets into <see cref="CompleteFrame"/>.
 /// </summary>
-public class RtpFrameAssemblerUnit : IPipelineUnit<RtpPacket, CompleteFrame>
+public class RtpFrameAssemblerUnit : IPipelineUnit<RtpPacket, MediaSample<CompleteFrame>>
 {
-    private readonly Dictionary<uint, RtpFrameAssembler> _assemblers = [];
+    private readonly Dictionary<int, TrackAssembly> _tracks = [];
     private PipelineContext _context = null!;
 
     public Task PrepareForExecutionAsync(PipelineContext context, CancellationToken cancellationToken)
@@ -24,23 +24,54 @@ public class RtpFrameAssemblerUnit : IPipelineUnit<RtpPacket, CompleteFrame>
 
     public async ValueTask ProcessAsync(
         RtpPacket packet,
-        Emit<CompleteFrame> emit,
+        Emit<MediaSample<CompleteFrame>> emit,
         CancellationToken cancellationToken)
     {
-        if (!_assemblers.TryGetValue(packet.Header.SSRC, out var assembler))
+        if (packet.ClockRate == 0)
         {
-            assembler = CreateAssembler(packet);
-            _assemblers.Add(packet.Header.SSRC, assembler);
+            throw new ArgumentException("RTP clock rate must be positive.", nameof(packet));
         }
 
-        var frame = assembler.AddPacket(packet);
+        if (!_tracks.TryGetValue(packet.TrackId, out var track))
+        {
+            track = new TrackAssembly(CreateAssembler(packet), packet);
+            _tracks.Add(packet.TrackId, track);
+        }
+
+        var pts = track.GetPts(packet);
+        var frame = track.Assembler.AddPacket(packet);
 
         if (frame is null)
         {
             return;
         }
 
-        await emit(frame, cancellationToken);
+        await emit(new MediaSample<CompleteFrame>(frame, packet.TrackId, pts,
+            frame is EncodedVideoFrame { Codec: Codec.H264 } ? null : pts, packet.WallClock), cancellationToken);
+    }
+
+    private sealed class TrackAssembly(RtpFrameAssembler assembler, RtpPacket first)
+    {
+        private long _timestamp = first.Header.Timestamp;
+        private readonly long _origin = first.Header.Timestamp;
+        private readonly uint _ssrc = first.Header.SSRC;
+        private readonly uint _clockRate = first.ClockRate;
+        public RtpFrameAssembler Assembler { get; } = assembler;
+
+        public TimeSpan GetPts(RtpPacket packet)
+        {
+            if (packet.Header.SSRC != _ssrc || packet.ClockRate != _clockRate)
+            {
+                throw new NotSupportedException("Changing an RTP track's SSRC or clock rate requires a new pipeline.");
+            }
+
+            // Signed modular differences allow both wraparound and presentation reordering.
+            var timestamp = _timestamp + unchecked((int)(packet.Header.Timestamp - (uint)_timestamp));
+            _timestamp = Math.Max(_timestamp, timestamp);
+            var ticks = checked((long)Math.Round(
+                (timestamp - _origin) * (decimal)TimeSpan.TicksPerSecond / _clockRate));
+            return TimeSpan.FromTicks(ticks);
+        }
     }
 
     private RtpFrameAssembler CreateAssembler(RtpPacket packet)

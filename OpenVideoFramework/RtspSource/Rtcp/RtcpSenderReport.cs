@@ -3,7 +3,7 @@ namespace OpenVideoFramework.RtspSource.Rtcp;
 public struct SenderInfo
 {
     /// <summary>
-    /// NTP format time. Seconds since 1st January 1970
+    /// NTP format time. Seconds since 1st January 1900, modulo 2^32.
     /// </summary>
     public uint NtpTimestampSeconds
     {

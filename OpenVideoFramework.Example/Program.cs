@@ -24,7 +24,7 @@ var loggerFactory = new SerilogLoggerFactory(logger);
 
 var pipelineContext = new PipelineContext("My pipeline", loggerFactory);
 
-var pipeline = PipelineBuilder
+var videoSamples = PipelineBuilder
     .From(
         pipelineContext,
         new RtspSource(new RtspSourceConfiguration
@@ -33,7 +33,9 @@ var pipeline = PipelineBuilder
             AllowedMediaType = MediaType.Video
         }))
     .To(new RtpFrameAssemblerUnit())
-    .To(new FrameFilterUnit<EncodedVideoFrame>())
+    .To(new FrameFilterUnit<EncodedVideoFrame>());
+
+var pipeline = videoSamples
     .To(new VideoTranscoderUnit(new VideoTranscoderUnitSettings
     {
         Fps = 25,

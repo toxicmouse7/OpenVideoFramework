@@ -14,7 +14,7 @@ namespace OpenVideoFramework.HttpStreamSink;
 /// Streams video frames as MJPEG over HTTP for real-time web viewing.
 /// Creates a web server that serves a live video stream accessible via web browsers.
 /// </summary>
-public class HttpStreamSink : IPipelineSink<EncodedVideoFrame>, IDisposable, IAsyncDisposable
+public class HttpStreamSink : IPipelineSink<MediaSample<EncodedVideoFrame>>, IDisposable, IAsyncDisposable
 {
     private readonly IWebHost _host;
     private readonly List<Channel<EncodedVideoFrame>> _channels;
@@ -63,8 +63,9 @@ public class HttpStreamSink : IPipelineSink<EncodedVideoFrame>, IDisposable, IAs
         _logger.LogInformation("HTTP stream prepared.");
     }
 
-    public ValueTask ConsumeAsync(EncodedVideoFrame frame, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(MediaSample<EncodedVideoFrame> sample, CancellationToken cancellationToken)
     {
+        var frame = sample.Frame;
         cancellationToken.ThrowIfCancellationRequested();
         if (frame.Codec != Codec.MJPEG)
         {

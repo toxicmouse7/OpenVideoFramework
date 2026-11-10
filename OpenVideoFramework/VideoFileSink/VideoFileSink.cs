@@ -5,8 +5,8 @@ using OpenVideoFramework.Pipelines;
 
 namespace OpenVideoFramework.VideoFileSink;
 
-/// <summary>Writes constant-frame-rate video, rotating at keyframes. Reordered H.264 is unsupported.</summary>
-public class VideoFileSink : IPipelineSink<EncodedVideoFrame>, IDisposable
+/// <summary>Writes timed video, using configured FPS for missing timestamps and rotating at keyframes.</summary>
+public class VideoFileSink : IPipelineSink<MediaSample<EncodedVideoFrame>>, IDisposable
 {
     private readonly VideoFileSinkSettings _settings;
     private readonly AVRational _frameTimeBase;
@@ -16,7 +16,11 @@ public class VideoFileSink : IPipelineSink<EncodedVideoFrame>, IDisposable
     private unsafe AVCodecParserContext* _parser;
     private unsafe AVCodecContext* _parserContext;
     private ILogger<VideoFileSink> _logger = null!;
-    private long _frameCount;
+    private TimeSpan _nextPts;
+    private TimeSpan _segmentStart;
+    private TimeSpan? _lastPts;
+    private long? _lastDts;
+    private int? _trackId;
     private int? _lastPictureNumber;
     private bool _headerWritten;
     private bool _disposed;
@@ -43,16 +47,23 @@ public class VideoFileSink : IPipelineSink<EncodedVideoFrame>, IDisposable
         return Task.CompletedTask;
     }
 
-    public ValueTask ConsumeAsync(EncodedVideoFrame frame, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(MediaSample<EncodedVideoFrame> sample, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        Write(frame);
+        Write(sample);
         return ValueTask.CompletedTask;
     }
 
-    private unsafe void Write(EncodedVideoFrame frame)
+    private unsafe void Write(MediaSample<EncodedVideoFrame> sample)
     {
+        var frame = sample.Frame;
         ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_trackId.HasValue && _trackId != sample.TrackId)
+        {
+            throw new NotSupportedException("A video file sink records one track. Use a separate sink per track.");
+        }
+
+        _trackId = sample.TrackId;
         if (_parameters == null && frame.Codec == Codec.H264 && !frame.IsKeyFrame)
         {
             return;
@@ -80,24 +91,42 @@ public class VideoFileSink : IPipelineSink<EncodedVideoFrame>, IDisposable
                     throw new NotSupportedException("An H.264 segment must begin with a keyframe.");
                 }
             }
+            // H.264 has already been restricted to pictures without reordering;
+            // MJPEG is independently decodable. Only here is DTS = PTS a safe fallback.
+            var pts = sample.Pts ?? sample.Dts ?? _nextPts;
+            var dts = sample.Dts ?? pts;
+            if ((_lastPts.HasValue && pts <= _lastPts.Value) || dts > pts)
+            {
+                throw new NotSupportedException(
+                    "Video recording requires increasing PTS and DTS <= PTS; transcode reordered input first.");
+            }
+
             if (_formatContext == null ||
-                (_frameCount * ffmpeg.av_q2d(_frameTimeBase) >= _settings.RollPeriod.TotalSeconds &&
+                (pts - _segmentStart >= _settings.RollPeriod &&
                  (frame.Codec != Codec.H264 || (packet->flags & ffmpeg.AV_PKT_FLAG_KEY) != 0)))
             {
                 RollFile();
+                _segmentStart = pts;
             }
 
             packet->stream_index = _stream->index;
-            packet->pts = packet->dts = ffmpeg.av_rescale_q(_frameCount, _frameTimeBase, _stream->time_base);
-            var next = ffmpeg.av_rescale_q(_frameCount + 1, _frameTimeBase, _stream->time_base);
-            packet->duration = next - packet->pts;
+            packet->pts = FFmpegPacketAdapter.ToTimestamp(pts, _stream->time_base);
+            packet->dts = FFmpegPacketAdapter.ToTimestamp(dts, _stream->time_base);
+            packet->duration = ffmpeg.av_rescale_q(1, _frameTimeBase, _stream->time_base);
+            if (_lastDts.HasValue && packet->dts <= _lastDts.Value)
+            {
+                throw new NotSupportedException(
+                    "Video DTS must increase and be representable in the container time base.");
+            }
             if (packet->duration <= 0)
             {
                 throw new NotSupportedException("The container time base cannot represent the configured FPS.");
             }
 
             FFmpegPacketAdapter.Check(ffmpeg.av_interleaved_write_frame(_formatContext, packet));
-            _frameCount++;
+            _lastPts = pts;
+            _lastDts = FFmpegPacketAdapter.ToTimestamp(dts, _stream->time_base);
+            _nextPts = pts + FFmpegPacketAdapter.FromTimestamp(1, _frameTimeBase)!.Value;
         }
         catch { Dispose(); throw; }
         finally { ffmpeg.av_packet_free(&packet); }
@@ -247,7 +276,7 @@ public class VideoFileSink : IPipelineSink<EncodedVideoFrame>, IDisposable
             }
 
             FFmpegPacketAdapter.Check(ffmpeg.avcodec_parameters_copy(_stream->codecpar, _parameters));
-            _stream->time_base = _frameTimeBase;
+            _stream->time_base = FFmpegPacketAdapter.TimeSpanTimeBase;
             _stream->avg_frame_rate = ffmpeg.av_inv_q(_frameTimeBase);
             if ((_formatContext->oformat->flags & ffmpeg.AVFMT_NOFILE) == 0)
             {
@@ -256,7 +285,7 @@ public class VideoFileSink : IPipelineSink<EncodedVideoFrame>, IDisposable
 
             FFmpegPacketAdapter.Check(ffmpeg.avformat_write_header(_formatContext, null));
             _headerWritten = true;
-            _frameCount = 0;
+            _lastDts = null;
         }
         catch
         {

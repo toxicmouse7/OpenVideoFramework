@@ -14,10 +14,6 @@ public class AudioFrame : CompleteFrame
     {
         get; init;
     }
-    public required DateTimeOffset ReceivedAt
-    {
-        get; init;
-    }
     public required Codec Codec
     {
         get; init;
@@ -26,13 +22,6 @@ public class AudioFrame : CompleteFrame
     {
         get; init;
     }
-    public DateTimeOffset? Timestamp
-    {
-        get; private set;
-    }
-
-    public void Stamp(DateTimeOffset timestamp) => Timestamp = timestamp;
-
     public int SampleRate
     {
         get; set;

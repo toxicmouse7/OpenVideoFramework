@@ -10,6 +10,11 @@ internal class RtcpStatisticsService
 
     public void UpdateStatistics(RtpPacket rtpPacket, uint clockRate, DateTimeOffset receivedAt)
     {
+        if (clockRate == 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(clockRate), "RTP clock rate must be positive.");
+        }
+
         if (!_streamStatistics.TryGetValue(rtpPacket.Header.SSRC, out var streamStatistics))
         {
             streamStatistics = new StreamStatistics(
@@ -57,4 +62,7 @@ internal class RtcpStatisticsService
 
         return receiverReport;
     }
+
+    public DateTimeOffset? GetWallClock(uint ssrc, uint timestamp) =>
+        _streamStatistics.GetValueOrDefault(ssrc)?.GetWallClock(timestamp);
 }
