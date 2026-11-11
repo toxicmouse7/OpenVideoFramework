@@ -1,0 +1,46 @@
+FROM mcr.microsoft.com/dotnet/sdk:8.0-bookworm-slim AS ffmpeg-build
+
+ARG FFMPEG_VERSION=9.0.2
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential ca-certificates curl libx264-dev nasm pkg-config xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /tmp/ffmpeg
+RUN curl --fail --location --retry 3 \
+        "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz" \
+        | tar --extract --xz --strip-components=1 \
+    && ./configure \
+        --prefix=/opt/ffmpeg \
+        --enable-shared \
+        --disable-static \
+        --disable-autodetect \
+        --disable-debug \
+        --disable-doc \
+        --disable-ffplay \
+        --enable-gpl \
+        --enable-libx264 \
+    && make -j2 \
+    && make install
+
+FROM mcr.microsoft.com/dotnet/sdk:8.0-bookworm-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libx264-164 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ffmpeg-build /opt/ffmpeg /opt/ffmpeg
+ENV PATH="/opt/ffmpeg/bin:${PATH}" \
+    FFMPEG_LIB_PATH="/opt/ffmpeg/lib" \
+    DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+    DOTNET_NOLOGO=1
+
+RUN echo /opt/ffmpeg/lib > /etc/ld.so.conf.d/ffmpeg.conf \
+    && ldconfig \
+    && test -e /opt/ffmpeg/lib/libavcodec.so.63 \
+    && ffmpeg -version \
+    && ffprobe -version
+
+WORKDIR /workspace
+CMD ["dotnet", "test", "OpenVideoFramework.sln", "--configuration", "Release"]
