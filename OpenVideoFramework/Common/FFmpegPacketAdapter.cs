@@ -61,7 +61,9 @@ internal static unsafe class FFmpegPacketAdapter
         throw new InvalidOperationException($"FFmpeg: {Marshal.PtrToStringAnsi((IntPtr)buffer)} ({result}).");
     }
 
-    internal static AVPacket* ToPacket(EncodedVideoFrame frame)
+    internal static AVPacket* ToPacket(EncodedVideoFrame frame) => ToPacket(frame.Data.Span, frame.IsKeyFrame);
+
+    internal static AVPacket* ToPacket(ReadOnlySpan<byte> data, bool isKeyFrame)
     {
         var packet = ffmpeg.av_packet_alloc();
         if (packet == null)
@@ -71,9 +73,9 @@ internal static unsafe class FFmpegPacketAdapter
 
         try
         {
-            Check(ffmpeg.av_new_packet(packet, frame.Data.Length));
-            frame.Data.Span.CopyTo(new Span<byte>(packet->data, packet->size));
-            if (frame.IsKeyFrame)
+            Check(ffmpeg.av_new_packet(packet, data.Length));
+            data.CopyTo(new Span<byte>(packet->data, packet->size));
+            if (isKeyFrame)
             {
                 packet->flags |= ffmpeg.AV_PKT_FLAG_KEY;
             }

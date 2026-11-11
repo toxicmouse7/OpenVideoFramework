@@ -359,7 +359,7 @@ public sealed class FFmpegTimingTests : IDisposable
         return path;
     }
 
-    private static async Task<List<MediaSample<EncodedVideoFrame>>> ReadVideo(string path)
+    internal static async Task<List<MediaSample<EncodedVideoFrame>>> ReadVideo(string path)
     {
         var source = new MediaFileUnit();
         await source.PrepareForExecutionAsync(RtpTimingTests.Context, default);
@@ -373,7 +373,7 @@ public sealed class FFmpegTimingTests : IDisposable
         return output;
     }
 
-    private static string Run(string command, params string[] arguments)
+    internal static string Run(string command, params string[] arguments)
     {
         var start = new ProcessStartInfo(command)
         {
